@@ -1,13 +1,12 @@
 #! /usr/bin/env python   
 """ Basic parser for the Rhim Thunderbolts manifest file. """
 
+from __future__ import print_function, absolute_import, division
+
 import sys, os, re
 import pybedtools
-#import pandas as pd
-#import cPickle as pickle
 
-
-
+from ampliconsoftclipper import __version__
 
 class PrimerPairRecord(object):
     """Represents a primer pair derived from a MiSeq manifest. """
@@ -61,17 +60,17 @@ def get_bedtools_region(primer_pair_record):
     return pybedtools.BedTool(regions)
 
 
-def main(thunderbolt_manifest):
+def main():
+    if (len(sys.argv) != 2):
+        print("usage: {0} [thunderbolts manifest]".format(os.path.basename(sys.argv[0])))
+        sys.exit()
+
+    thunderbolt_manifest = sys.argv[1]
     primers = parse_thunderbolts_manifest(thunderbolt_manifest)
-    print primers[0]
-    
-    print "done."
+    print(primers[0])
+
+    print("done.")
 
 if __name__ == '__main__':
-
-    if (len(sys.argv) != 2):
-        print "usage: {0} [thunderbolts manifest]".format(os.path.basename(sys.argv[0]))
-        sys.exit()
-    thunderbolt_manifest = sys.argv[1]
-    main(thunderbolt_manifest)
+    main()
 
