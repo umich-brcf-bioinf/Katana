@@ -54,18 +54,24 @@ def parse_thunderbolts_manifest(filename):
     return primer_l
 
 
+def get_bedtools_region(primer_pair_record):
+    regions = [(primer_pair_record.chrom,
+                primer_pair_record.sense_sequence,
+                primer_pair_record.antisense_start)]
+    return pybedtools.BedTool(regions)
 
 
-
+def main(thunderbolt_manifest):
+    primers = parse_thunderbolts_manifest(thunderbolt_manifest)
+    print primers[0]
+    
+    print "done."
 
 if __name__ == '__main__':
 
-   if (len(sys.argv) != 2):
+    if (len(sys.argv) != 2):
         print "usage: {0} [thunderbolts manifest]".format(os.path.basename(sys.argv[0]))
-        sys.exit() 
+        sys.exit()
+    thunderbolt_manifest = sys.argv[1]
+    main(thunderbolt_manifest)
 
-   primers = parse_thunderbolts_manifest(sys.argv[1])
-   print primers[0]
-
-
-   print "done."
