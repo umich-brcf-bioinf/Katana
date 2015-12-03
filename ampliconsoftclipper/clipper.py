@@ -218,10 +218,22 @@ def main():
             if read_key[2] == '+':
                 sense_count += 1
                 original_cigar = r.cigarstring
+                original_ref_start = int(r.reference_start)
                 if original_cigar:
-                    clip_len = len(primer_pair_record.sense_sequence)
-                    new_cigar = Cigar(original_cigar).mask_left(clip_len).cigar
+                    sense_clip_len = len(primer_pair_record.sense_sequence)
+                    antisense_clip_len = len(primer_pair_record.antisense_sequence)
+                    new_cigar = Cigar(original_cigar).mask_left(sense_clip_len).mask_right(antisense_clip_len).cigar
                     r.cigarstring = new_cigar
+                    r.reference_start = original_ref_start + sense_clip_len
+            elif read_key[2] == '-':
+                original_cigar = r.cigarstring
+                original_ref_start = int(r.reference_start)
+                if original_cigar:
+                    antisense_clip_len = len(primer_pair_record.antisense_sequence)
+                    sense_clip_len = len(primer_pair_record.sense_sequence)
+                    new_cigar = Cigar(original_cigar).mask_left(sense_clip_len).mask_right(antisense_clip_len).cigar
+                    r.cigarstring = new_cigar
+                    r.reference_start = original_ref_start + (sense_clip_len - 8)
             out_bam.write(r)
         except KeyError:
             #This read not an amplicon
