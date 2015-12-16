@@ -4,94 +4,10 @@
 from __future__ import print_function, absolute_import, division
 
 import sys, os, re
-import pybedtools
 import pysam
-from itertools import groupby
-
+from ampliconsoftclipper.cigar import Cigar
+from ampliconsoftclipper.cigar import cigar_factory
 from ampliconsoftclipper import __version__
-
-
-class Cigar(object):
-    read_consuming_ops = ("M", "I", "S", "=", "X")
-    ref_consuming_ops = ("M", "D", "N", "=", "X")
-
-    def __init__(self, cigar_string):
-        self.cigar = cigar_string
-
-    def items(self):
-        if self.cigar == "*":
-            yield (0, None)
-            raise StopIteration
-        cig_iter = groupby(self.cigar, lambda c: c.isdigit())
-        for g, n in cig_iter:
-            yield int("".join(n)), "".join(next(cig_iter)[1])
-
-    def __str__(self):
-        return self.cigar
-
-    def __repr__(self):
-        return "Cigar('%s')" % self
-
-    def __len__(self):
-        """
-        sum of MIS=X ops shall equal the sequence length.
-        """
-        return sum(l for l, op,in self.items() \
-                               if op in Cigar.read_consuming_ops)
-
-    def reference_length(self):
-        return sum(l for l, op in self.items() \
-                               if op in Cigar.read_consuming_ops)
-
-    def mask_left(self, n_seq_bases, mask="S"):
-        """
-        Return a new cigar with cigar string where the first `n_seq_bases` are
-        soft-masked unless they are already hard-masked.
-        """
-        cigs = list(self.items())
-        new_cigs = []
-
-        c, cum_len  = self.cigar, 0
-        for i, (l, op) in enumerate(cigs):
-            if op in Cigar.read_consuming_ops:
-                cum_len += l
-            if op == "H":
-                cum_len += l
-                new_cigs.append(cigs[i])
-            elif cum_len < n_seq_bases:
-                new_cigs.append(cigs[i])
-            else:
-                # the current cigar element is split by the masking.
-                right_extra = cum_len - n_seq_bases
-                new_cigs.append((l - right_extra, 'S'))
-                if right_extra != 0:
-                    new_cigs.append((right_extra, cigs[i][1]))
-            if cum_len >= n_seq_bases: break
-        else:
-            pass
-
-        new_cigs[:i] = [(l, op if op in "HS" else "S") for l, op in
-                new_cigs[:i]]
-        new_cigs.extend(cigs[i + 1:])
-        return Cigar(Cigar.string_from_elements(new_cigs))
-
-
-    @classmethod
-    def string_from_elements(self, elements):
-        return "".join("%i%s" % (l, op) for l, op in elements if l !=0)
-
-
-    def mask_right(self, n_seq_bases, mask="S"):
-        """
-        Return a new cigar with cigar string where the last `n_seq_bases` are
-        soft-masked unless they are already hard-masked.
-        """
-        return Cigar(Cigar(self._reverse_cigar()).mask_left(n_seq_bases, mask)._reverse_cigar())
-
-
-    def _reverse_cigar(self):
-        return Cigar.string_from_elements(list(self.items())[::-1])
-
 
 
 class PrimerPairRecord(object):
@@ -209,37 +125,59 @@ def main():
     count = 0
     hit_count = 0
     sense_count = 0
+    indels_in_primer_region = 0
     for r in iter:
+        cigar = cigar_factory(r.reference_start, r.cigarstring)
+        if (cigar.is_null()):
+            continue
         count += 1
         read_key = get_key_from_read(r)
         try:
             primer_pair_record = primer_pos_d[read_key]
+            r.set_tag("X0", primer_pair_record.target_id, "Z")
             hit_count += 1
             if read_key[2] == '+':
-                sense_count += 1
-                original_cigar = r.cigarstring
-                original_ref_start = int(r.reference_start)
-                if original_cigar:
-                    sense_clip_len = len(primer_pair_record.sense_sequence)
-                    antisense_clip_len = len(primer_pair_record.antisense_sequence)
-                    new_cigar = Cigar(original_cigar).mask_left(sense_clip_len).mask_right(antisense_clip_len).cigar
-                    r.cigarstring = new_cigar
-                    r.reference_start = original_ref_start + sense_clip_len
+                sense_clip_len = len(primer_pair_record.sense_sequence)
+                if cigar.edge_indels("front", sense_clip_len):
+                    indels_in_primer_region += 1
+                    continue
+                new_cigar = cigar.softclip_front(sense_clip_len)
+                r.cigarstring = new_cigar.cigar
+                r.reference_start = new_cigar.pos
             elif read_key[2] == '-':
-                original_cigar = r.cigarstring
-                original_ref_start = int(r.reference_start)
-                if original_cigar:
-                    antisense_clip_len = len(primer_pair_record.antisense_sequence)
-                    sense_clip_len = len(primer_pair_record.sense_sequence)
-                    new_cigar = Cigar(original_cigar).mask_left(sense_clip_len).mask_right(antisense_clip_len).cigar
-                    r.cigarstring = new_cigar
-                    r.reference_start = original_ref_start + (sense_clip_len - 8)
+                antisense_clip_len = len(primer_pair_record.antisense_sequence)
+                if cigar.edge_indels("back", antisense_clip_len):
+                    indels_in_primer_region += 1
+                    continue
+                new_cigar = cigar.softclip_back(antisense_clip_len)
+                r.cigarstring = new_cigar.cigar
+                r.reference_start = new_cigar.pos
+
+#             if read_key[2] == '+':
+#                 sense_count += 1
+#                 original_cigar = r.cigarstring
+#                 original_ref_start = int(r.reference_start)
+#                 if original_cigar:
+#                     sense_clip_len = len(primer_pair_record.sense_sequence)
+#                     antisense_clip_len = len(primer_pair_record.antisense_sequence)
+#                     new_cigar = Cigar(original_cigar).mask_left(sense_clip_len).mask_right(antisense_clip_len).cigar
+#                     r.cigarstring = new_cigar
+#                     r.reference_start = original_ref_start + sense_clip_len
+#             elif read_key[2] == '-':
+#                 original_cigar = r.cigarstring
+#                 original_ref_start = int(r.reference_start)
+#                 if original_cigar:
+#                     antisense_clip_len = len(primer_pair_record.antisense_sequence)
+#                     sense_clip_len = len(primer_pair_record.sense_sequence)
+#                     new_cigar = Cigar(original_cigar).mask_left(sense_clip_len).mask_right(antisense_clip_len).cigar
+#                     r.cigarstring = new_cigar
+#                     r.reference_start = original_ref_start + (sense_clip_len - 8)
             out_bam.write(r)
         except KeyError:
             #This read not an amplicon
             pass
     out_bam.close()
-    print("total: {}\nhit: {}\nsense: {}".format(count, hit_count, sense_count))
+    print("total: {}\nhit: {}\nsense: {}\nindel in primer region: {}".format(count, hit_count, sense_count, indels_in_primer_region))
     sys.exit()
 
 

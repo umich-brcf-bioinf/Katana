@@ -1,36 +1,81 @@
-""" Super basic CIGAR manipulation and querying. """
+""" Super-basic CIGAR manipulation and querying. """
 
 from __future__ import print_function, absolute_import, division
+
+class IndelException(Exception):
+    """Flagging cases that we can not process at this time."""
+    def __init__(self, msg, *args):
+        #pylint: disable=star-args
+        error_msg = msg.format(*[str(i) for i in args])
+        super(IndelException, self).__init__(error_msg)
 
 import re
 from itertools import groupby
 
+#CigarEditor?
 class Cigar(object):
-    def __init__(self, cigar_string):
+    INDEL_PATTERN = re.compile("[ID]")
+
+    def __init__(self, pos, cigar_string):
+        self.pos = pos
         self.cigar = cigar_string
         self.cigar_profile = self._expand_cigar(cigar_string)
 
-    def indels_in_front(self, length):
-        indel_pattern = re.compile("[ID]")
-        return indel_pattern.search(self.cigar_profile[0:length]) != None
-
-    def indels_in_back(self, length):
-        indel_pattern = re.compile("[ID]")
-        return indel_pattern.search(self.cigar_profile[-length:]) != None
+    def edge_indels(self, front_or_back, length):
+        if length > len(self.cigar_profile):
+            msg = "Requested edge indel length [{}] > sequence length [{}]"
+            raise ValueError(msg.format(length, len(self.cigar_profile)))
+        if front_or_back == 'front':
+            cigar_sequence = self.cigar_profile[0:length]
+        elif front_or_back == 'back':
+           cigar_sequence = self.cigar_profile[-length:]
+        else:
+            raise ValueError("Parameter 'front_or_back' must be 'front' or 'back'")
+        return self.INDEL_PATTERN.search(cigar_sequence) != None
 
     def _expand_cigar(self, cigar_string):
-        pattern = re.compile("([0-9]+)([MIDNSHP=X])")
-        expanded_cigar = []
-        for cigar_tuple in pattern.findall(cigar_string):
-            expanded_cigar.append(int(cigar_tuple[0]) * cigar_tuple[1])
-        return "".join(expanded_cigar)
+        try:
+            pattern = re.compile("([0-9]+)([MIDNSHP=X])")
+            expanded_cigar = []
+            for cigar_tuple in pattern.findall(cigar_string):
+                expanded_cigar.append(int(cigar_tuple[0]) * cigar_tuple[1])
+            return "".join(expanded_cigar)
+        except TypeError as e:
+            print (e)
+            print(cigar_string)
+            raise
 
-    
-    def softclip_front(self, length=5):
-        new_profile = "S" * length + self.cigar_profile[length:]
-        new_cigar = Cigar(self._collapse_cigar_profile(new_profile))
+    def softclip_front(self, length):
+        if length > len(self.cigar_profile):
+            msg = "Requested softclip length [{}] > sequence length [{}]"
+            raise ValueError(msg.format(length, len(self.cigar_profile)))
+        if self.edge_indels('front', length):
+            msg = "Indel found in first [{}] bases of cigar [{}]"
+            raise IndelException(msg.format(length, self.cigar))
+        front = self.cigar_profile[:length]
+        back = self.cigar_profile[length:]
+        new_front = re.sub("[^H]", "S", front)
+        new_profile = new_front + back
+        new_first_M = new_profile.find("M")
+        old_first_M = self.cigar_profile.find("M")
+        new_pos = self.pos + (new_first_M - old_first_M)
+        new_cigar = Cigar(new_pos, self._collapse_cigar_profile(new_profile))
         return new_cigar
-    
+
+    def softclip_back(self, length):
+        if length > len(self.cigar_profile):
+            msg = "Requested softclip length [{}] > sequence length [{}]"
+            raise ValueError(msg.format(length, len(self.cigar_profile)))
+        if self.edge_indels('back', length):
+            msg = "Indel found in last [{}] bases of cigar [{}]"
+            raise IndelException(msg.format(length, self.cigar))
+        front = self.cigar_profile[:-length]
+        back = self.cigar_profile[-length:]
+        new_back = re.sub("[^H]", "S", back)
+        new_profile = front + new_back
+        new_cigar = Cigar(self.pos, self._collapse_cigar_profile(new_profile))
+        return new_cigar
+
     def _collapse_cigar_profile(self, profile):
         op_strings = []
         current_op = profile[0]
@@ -48,86 +93,33 @@ class Cigar(object):
             new_cigar += str(len(op_string)) + op_string[0]
         return new_cigar
 
-#5M1I4S
-#MMMMMISSSS
-#
+    def is_null(self):
+        return False
 
-#     read_consuming_ops = ("M", "I", "S", "=", "X")
-#     ref_consuming_ops = ("M", "D", "N", "=", "X")
-# 
-#     def __init__(self, cigar_string):
-#         self.cigar = cigar_string
-# 
-#     def items(self):
-#         if self.cigar == "*":
-#             yield (0, None)
-#             raise StopIteration
-#         cig_iter = groupby(self.cigar, lambda c: c.isdigit())
-#         for g, n in cig_iter:
-#             yield int("".join(n)), "".join(next(cig_iter)[1])
-# 
-#     def __str__(self):
-#         return self.cigar
-# 
-#     def __repr__(self):
-#         return "Cigar('%s')" % self
-# 
-#     def __len__(self):
-#         """
-#         sum of MIS=X ops shall equal the sequence length.
-#         """
-#         return sum(l for l, op,in self.items() \
-#                                if op in Cigar.read_consuming_ops)
-# 
-#     def reference_length(self):
-#         return sum(l for l, op in self.items() \
-#                                if op in Cigar.read_consuming_ops)
-# 
-#     def mask_left(self, n_seq_bases, mask="S"):
-#         """
-#         Return a new cigar with cigar string where the first `n_seq_bases` are
-#         soft-masked unless they are already hard-masked.
-#         """
-#         cigs = list(self.items())
-#         new_cigs = []
-# 
-#         c, cum_len  = self.cigar, 0
-#         for i, (l, op) in enumerate(cigs):
-#             if op in Cigar.read_consuming_ops:
-#                 cum_len += l
-#             if op == "H":
-#                 cum_len += l
-#                 new_cigs.append(cigs[i])
-#             elif cum_len < n_seq_bases:
-#                 new_cigs.append(cigs[i])
-#             else:
-#                 # the current cigar element is split by the masking.
-#                 right_extra = cum_len - n_seq_bases
-#                 new_cigs.append((l - right_extra, 'S'))
-#                 if right_extra != 0:
-#                     new_cigs.append((right_extra, cigs[i][1]))
-#             if cum_len >= n_seq_bases: break
-#         else:
-#             pass
-# 
-#         new_cigs[:i] = [(l, op if op in "HS" else "S") for l, op in
-#                 new_cigs[:i]]
-#         new_cigs.extend(cigs[i + 1:])
-#         return Cigar(Cigar.string_from_elements(new_cigs))
-# 
-# 
-#     @classmethod
-#     def string_from_elements(self, elements):
-#         return "".join("%i%s" % (l, op) for l, op in elements if l !=0)
-# 
-# 
-#     def mask_right(self, n_seq_bases, mask="S"):
-#         """
-#         Return a new cigar with cigar string where the last `n_seq_bases` are
-#         soft-masked unless they are already hard-masked.
-#         """
-#         return Cigar(Cigar(self._reverse_cigar()).mask_left(n_seq_bases, mask)._reverse_cigar())
-# 
-# 
-#     def _reverse_cigar(self):
-#         return Cigar.string_from_elements(list(self.items())[::-1])
+
+class NullCigar(object):
+    def __init__(self, pos):
+        self.cigar = "*"
+        self.pos = pos
+
+    def edge_indels(self, front_or_back, length):
+        return False
+
+    def indels_in_back(self, length):
+        return False
+
+    def softclip_front(self, length):
+        return self
+
+    def softclip_back(self, length):
+        return self
+        
+    def is_null(self):
+        return True
+
+def cigar_factory(pos, cigar_string):
+    if not cigar_string or cigar_string == "*":
+        return NullCigar(pos)
+    else:
+        return Cigar(pos, cigar_string)
+
