@@ -5,8 +5,8 @@ from __future__ import print_function, absolute_import, division
 
 import sys, os, re
 import pysam
-from ampliconsoftclipper.cigar import Cigar
-from ampliconsoftclipper.cigar import cigar_factory
+from ampliconsoftclipper.cigar import CigarEditor
+from ampliconsoftclipper.cigar import cigar_editor_factory
 from ampliconsoftclipper import __version__
 
 
