@@ -2,6 +2,7 @@
 
 from __future__ import print_function, absolute_import, division
 import collections
+import itertools
 
 class IndelException(Exception):
     """Flagging cases that we can not process at this time."""
@@ -128,21 +129,9 @@ class CigarEditor(object):
 
     @staticmethod
     def _collapse_cigar_profile(profile):
-        op_strings = []
-        current_op = profile[0]
-        op_string = current_op
-        for operation in profile[1:]:
-            if operation != current_op:
-                op_strings.append(op_string)
-                op_string = operation
-                current_op = operation
-            else:
-                op_string += operation
-        op_strings.append(op_string)
-        new_cigar = ""
-        for op_string in op_strings:
-            new_cigar += str(len(op_string)) + op_string[0]
-        return new_cigar
+        op_strings = ["".join(g) for _, g in itertools.groupby(profile)]
+        new_cigar = [str(len(op)) + op[0] for op in op_strings]
+        return "".join(new_cigar)
 
     @staticmethod
     def is_null():

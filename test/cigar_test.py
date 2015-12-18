@@ -47,8 +47,15 @@ class CigarEditorTestCase(unittest.TestCase):
         self.assertEquals("IIIIM", c._get_profile_overlap(47, 48))
         self.assertEquals("SSSSS", c._get_profile_overlap(48,53))
 
-#     def test_get_profile_overlap_outOfBounds(self):
-#         self.assertEquals("Not done yet", "")
+    def test_get_profile_overlap_outOfBounds(self):
+        c = cigar.cigar_editor_factory(42, "2S6M2X")
+        self.assertEquals("SS", c._get_profile_overlap(30,42))
+        self.assertEquals("XX", c._get_profile_overlap(48,60))
+        self.assertEquals("", c._get_profile_overlap(20,30))
+
+#     def test_partition(self):
+#         c = cigar.cigar_editor_factory(42, "10M")
+#         self.assertEquals((42,"2M"), (44,"6M"), (50, "2M"), c.partition(44,50))
 
     def test_indels_in_region_falseIfNoIndels(self):
         c = cigar.cigar_editor_factory(42, "10M")
