@@ -14,8 +14,8 @@ class IndelException(Exception):
 import re
 
 INDEL_PATTERN = re.compile("[ID]")
-REF_CONSUMING_OPS = re.compile("[MDN=X]")
-REF_CONSUMING_OP_LIST = list("MDN=X")
+REF_CONSUMING_OPS = re.compile("[MDN=XS]")
+REF_CONSUMING_OP_LIST = list("MDN=XS")
 
 class CigarEditor(object):
 # // The Consume values for each of the CigarOpTypes is as follows:
@@ -40,19 +40,18 @@ class CigarEditor(object):
         self.reference_end = self._reference_end(self.reference_start,
                                                  self.cigar_profile)
 
+    #TODO: This wrongly assumes the first cigar is a match; let's make this go away?
     def _reference_end(self, reference_start, cigar_profile):
-        return reference_start \
-            + len(REF_CONSUMING_OPS.findall(cigar_profile)) \
-            - 1
+        return reference_start +  len(REF_CONSUMING_OPS.findall(cigar_profile)) - 1
 
     def indels_in_region(self, start, end):
-        return self._contains_indel(self._get_profile_overlap(start, end))
+        return self._contains_indel(self._get_profile_overlap_tuple(start, end)[1])
 
     @staticmethod
     def _contains_indel(profile):
         return INDEL_PATTERN.search(profile) != None
 
-    def _get_profile_overlap(self, reference_start, reference_end):
+    def _get_cigar_editor_tuple(self, reference_start, reference_end):
         pos_profiles = collections.defaultdict(str)
 
         preamble = self.cigar_profile[:self.cigar_profile.find("M")]
@@ -61,16 +60,44 @@ class CigarEditor(object):
             pos_profiles[pos] += cigar_op
             if cigar_op in REF_CONSUMING_OP_LIST:
                 pos -= 1
+        min_pos = pos
 
         pos = self.reference_start
         for cigar_op in self.cigar_profile[self.cigar_profile.find("M"):]:
             pos_profiles[pos] += cigar_op
+            max_pos= pos
             if cigar_op in REF_CONSUMING_OP_LIST:
                 pos += 1
 
-        cigar_ops = [pos_profiles[pos] for pos in xrange(reference_start,
-                                                         reference_end)]
-        return "".join(cigar_ops)
+        pre_target = []
+        target = []
+        post_target = []
+        target_start = -1
+        post_start = -1
+        for pos in xrange(min_pos, max_pos + 1):
+            ops = pos_profiles[pos]
+            if pos < reference_start:
+                pre_target.append(ops)
+            elif reference_start <= pos < reference_end:
+                #TODO: this smells bad
+                target_start = target_start if target_start > 0 else pos
+                target.append(ops)
+            elif pos >= reference_end:
+                post_start = post_start if post_start > 0 else pos
+                post_target.append(ops)
+            else:
+                raise IndexError("incorrect position for profile")
+        pre_cigar_editor = CigarEditor(min_pos,
+                                       self._collapse_cigar_profile("".join(pre_target)))
+        target_cigar_editor = CigarEditor(target_start,
+                                          self._collapse_cigar_profile("".join(target)))
+        post_cigar_editor = CigarEditor(post_start,
+                                        self._collapse_cigar_profile("".join(post_target)))
+        return (pre_cigar_editor, target_cigar_editor, post_cigar_editor)
+
+    def _get_profile_overlap_tuple(self, reference_start, reference_end):
+        (a, b, c) = self._get_cigar_editor_tuple(reference_start, reference_end)
+        return (a.cigar_profile, b.cigar_profile, c.cigar_profile)
 
 
     def edge_indels(self, front_or_back, length):
@@ -93,6 +120,31 @@ class CigarEditor(object):
         for cigar_tuple in pattern.findall(cigar_string):
             expanded_cigar.append(int(cigar_tuple[0]) * cigar_tuple[1])
         return "".join(expanded_cigar)
+
+    def softclip_target(self, target_start, target_end):
+        (pre_target,
+         target,
+         post_target) = self._get_cigar_editor_tuple(target_start,
+                                                     target_end)
+        pre_profile = re.sub("[DNP]", "", pre_target.cigar_profile)
+        pre_profile = re.sub("[^H]", "S", pre_profile)
+        first_match = target.cigar_profile.find("M")
+        new_pos = target.reference_start
+        if first_match > -1:
+            new_pos += first_match
+        target_prematch = re.sub("[DNP]",
+                                 "",
+                                 target.cigar_profile[0:first_match])
+        target_prematch = re.sub("[^H]",
+                                 "S",
+                                 target_prematch)
+        target_profile = target_prematch + target.cigar_profile[first_match:]
+        post_profile = re.sub("[DNP]", "", post_target.cigar_profile)
+        post_profile = re.sub("[^H]", "S", post_profile)
+        new_cigar = self._collapse_cigar_profile(pre_profile \
+                                                 + target_profile \
+                                                 + post_profile)
+        return CigarEditor(new_pos, new_cigar)
 
     def softclip_front(self, length):
         if length > len(self.cigar_profile):
