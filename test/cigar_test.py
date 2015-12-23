@@ -4,19 +4,188 @@ import unittest
 from ampliconsoftclipper.cigar import IndelException
 from ampliconsoftclipper import cigar
 
+
+class CigarUtilTestCase(unittest.TestCase):
+    def test_ref_consuming(self):
+        util = cigar.CigarUtil()
+        self.assertEquals(True, util._is_ref_consuming("M"))
+        self.assertEquals(False, util._is_ref_consuming("I"))
+        self.assertEquals(True, util._is_ref_consuming("S"))
+        self.assertEquals(True, util._is_ref_consuming("="))
+        self.assertEquals(True, util._is_ref_consuming("X"))
+        self.assertEquals(True, util._is_ref_consuming("D"))
+        self.assertEquals(True, util._is_ref_consuming("N"))
+        self.assertEquals(False, util._is_ref_consuming("H"))
+        self.assertEquals(False, util._is_ref_consuming("P"))
+
+    def test_softclip_replacesConsumingOpsWithSoftClips(self):
+        util = cigar.CigarUtil()
+        self.assertEquals("HS" "SSSS" "SH",
+                          util.softclip(cigar_profile="HS" "MI=X" "SH"))
+
+    def test_softclip_removesNonConsumingOps(self):
+        util = cigar.CigarUtil()
+        self.assertEquals("HS" "SH",
+                          util.softclip(cigar_profile="HS" "DP" "SH"))
+
+    def test_softclip_to_first_match(self):
+        util = cigar.CigarUtil()
+        self.assertEquals((45, "MM"),
+                          util.softclip_to_first_match(45, "MM"))
+
+    def test_softclip_to_first_noMatchesPassesThrough(self):
+        util = cigar.CigarUtil()
+        self.assertEquals((45, "SS"),
+                          util.softclip_to_first_match(45, "SS"))
+
+    def test_softclip_to_first_match_posIsAdjusted(self):
+        util = cigar.CigarUtil()
+        self.assertEquals((45, "SS" "MPNDISH"),
+                          util.softclip_to_first_match(42, "SDNIP" "MPNDISH"))
+
+    def test_softclip_to_first_match_uncommonMatchOpOk(self):
+        util = cigar.CigarUtil()
+        self.assertEquals((45, "SS" "XPNDISH"),
+                          util.softclip_to_first_match(42, "SDNIP" "XPNDISH"))
+        util = cigar.CigarUtil()
+        self.assertEquals((45, "SS" "=PNDISH"),
+                          util.softclip_to_first_match(42, "SDNIP" "=PNDISH"))
+
+    def test_pos_profiles(self):
+        util = cigar.CigarUtil()
+        actual = util._pos_profiles("MMM")
+        self.assertEquals((0, ["M", "M", "M"]), actual)
+
+    def test_pos_profiles_uncommonMatchOpOk(self):
+        util = cigar.CigarUtil()
+        actual = util._pos_profiles("=MM")
+        self.assertEquals((0, ["=", "M", "M"]), actual)
+
+    def test_pos_profiles_leadingSoftclips(self):
+        util = cigar.CigarUtil()
+        actual = util._pos_profiles("SMM")
+        self.assertEquals((1, ["S", "M", "M"]), actual)
+
+    def test_pos_profiles_insertOk(self):
+        util = cigar.CigarUtil()
+        actual = util._pos_profiles("SIM")
+        self.assertEquals((1, ["S", "IM"]), actual)
+
+    def test_pos_profiles_deleteOk(self):
+        util = cigar.CigarUtil()
+        actual = util._pos_profiles("SDM")
+        self.assertEquals((2, ["S", "D", "M"]), actual)
+
+    def test_pos_profiles_trailingHardclips(self):
+        util = cigar.CigarUtil()
+        actual = util._pos_profiles("SDMHH")
+        self.assertEquals((2, ["S", "D", "M", "HH"]), actual)
+
+
+    def test_partition_cigar(self):
+        util = cigar.CigarUtil()
+        (c1, c2, c3) = util.partition_cigar(42, "SS" "MMMMMM" "SS", 42, 48)
+        self.assertEquals((40,"SS"), c1)
+        self.assertEquals((42,"MMMMMM"), c2)
+        self.assertEquals((48,"SS"), c3)
+
+    def test_partition_cigar_refConsumingOps(self):
+        util = cigar.CigarUtil()
+        # 4444444455
+        # 2345678901
+        # MMMMM
+        #      XXXXX
+        (c1, c2, c3) = util.partition_cigar(42, "MMMMMXXXXX", 42, 47)
+        self.assertEquals((42,""), c1)
+        self.assertEquals((42,"MMMMM"), c2)
+        self.assertEquals((47,"XXXXX"), c3)
+        (c1, c2, c3) = util.partition_cigar(42, "MMMMMXXXXX", 47, 52)
+        self.assertEquals((42,"MMMMM"), c1)
+        self.assertEquals((47,"XXXXX"), c2)
+        self.assertEquals((52,""), c3)
+
+    def test_partition_cigar_refNonconsumingOps(self):
+        util = cigar.CigarUtil()
+        (c1, c2, c3) = util.partition_cigar(42, "MMMMMIIIIM", 42, 47)
+        self.assertEquals((42,""), c1)
+        self.assertEquals((42,"MMMMM"), c2)
+        self.assertEquals((47,"IIIIM"), c3)
+        (c1, c2, c3) = util.partition_cigar(42, "MMMMMIIIIM", 47, 48)
+        self.assertEquals((42,"MMMMM"), c1)
+        self.assertEquals((47,"IIIIM"), c2)
+        self.assertEquals((48,""), c3)
+
+    def test_partition_cigar_refNonconsumingOpsWithFlankingSoftclips(self):
+        util = cigar.CigarUtil()
+        (c1, c2, c3) = util.partition_cigar(42,
+                                            "SSSSS" "MMMMM" "IIII" "M" "SSSSS",
+                                            42,
+                                            47)
+        self.assertEquals((37,"SSSSS"), c1)
+        self.assertEquals((42,"MMMMM"), c2)
+        self.assertEquals((47,"IIIIMSSSSS"), c3)
+        (c1, c2, c3) = util.partition_cigar(42,
+                                            "SSSSS" "MMMMM" "IIII" "M" "SSSSS",
+                                            47,
+                                            48)
+        self.assertEquals((37,"SSSSSMMMMM"), c1)
+        self.assertEquals((47,"IIIIM"), c2)
+        self.assertEquals((48,"SSSSS"), c3)
+        (c1, c2, c3) = util.partition_cigar(42,
+                                            "SSSSS" "MMMMM" "IIII" "M" "SSSSS",
+                                            48,
+                                            53)
+        self.assertEquals((37,"SSSSSMMMMMIIIIM"), c1)
+        self.assertEquals((48,"SSSSS"), c2)
+        self.assertEquals((53,""), c3)
+
+    def test_partition_outOfBounds(self):
+        # ref   | 4444444444
+        #       | 0123456789
+        # read  | SSMMMMM
+        #       |        XX
+        # index | 210123456
+        util = cigar.CigarUtil()
+        (c1, c2, c3) = util.partition_cigar(42,
+                                            "SS" "MMMMMM" "XX",
+                                            30,
+                                            42)
+        self.assertEquals((40,""), c1)
+        self.assertEquals((40,"SS"), c2)
+        self.assertEquals((42,"MMMMMMXX"), c3)
+        (c1, c2, c3) = util.partition_cigar(42,
+                                            "SS" "MMMMMM" "XX",
+                                            48,
+                                            60)
+        self.assertEquals((40,"SSMMMMMM"), c1)
+        self.assertEquals((48,"XX"), c2)
+        self.assertEquals((50,""), c3)
+        (c1, c2, c3) = util.partition_cigar(42,
+                                            "SS" "MMMMMM" "XX",
+                                            20,
+                                            30)
+        self.assertEquals((40,""), c1)
+        self.assertEquals((40,""), c2)
+        self.assertEquals((40,"SSMMMMMMXX"), c3)
+        (c1, c2, c3) = util.partition_cigar(42,
+                                            "SS" "MMMMMM" "XX",
+                                            100,
+                                            110)
+        self.assertEquals((40,"SSMMMMMMXX"), c1)
+        self.assertEquals((50,""), c2)
+        self.assertEquals((50,""), c3)
+
+
+#         self.assertEquals(("SSMMMMMMXX", "", ""),
+#                           c._get_profile_overlap_tuple(100,110))
+
+
+
 class CigarEditorTestCase(unittest.TestCase):
     def test_init(self):
         c = cigar.cigar_editor_factory(42, "10M")
         self.assertEquals("10M", c.cigar)
         self.assertEquals(42, c.reference_start)
-
-    def test_init_reference_end(self):
-        c = cigar.cigar_editor_factory(42, "10M")
-        self.assertEquals(51, c.reference_end)
-        c = cigar.cigar_editor_factory(42, "5M" "5I" "5M" "5S" "5H")
-        self.assertEquals(56, c.reference_end)
-        c = cigar.cigar_editor_factory(42, "5S" "5M" "5I" "3D" "5M" "5S")
-        self.assertEquals(64, c.reference_end)
 
     def test_cigar_profile(self):
         c = cigar.cigar_editor_factory(42, "5M1I4S")
@@ -26,46 +195,51 @@ class CigarEditorTestCase(unittest.TestCase):
         c = cigar.cigar_editor_factory(42, "10M1I1D10H")
         self.assertEquals("MMMMMMMMMMIDHHHHHHHHHH", c.cigar_profile)
 
-    def test_get_profile_overlap_tuple(self):
-        c = cigar.cigar_editor_factory(42, "10M")
-        self.assertEquals(("","MMMMMMMMMM",""),
-                          c._get_profile_overlap_tuple(42,52))
-
-    def test_get_profile_overlap_refConsumingOps(self):
-        c = cigar.cigar_editor_factory(42, "5M5X")
-        self.assertEquals(("", "MMMMM", "XXXXX"),
-                          c._get_profile_overlap_tuple(42,47))
-        self.assertEquals(("MMMMM", "XXXXX", ""),
-                          c._get_profile_overlap_tuple(47, 52))
-
-    def test_get_profile_overlap_refNonconsumingOps(self):
-        c = cigar.cigar_editor_factory(42, "5M4I1M")
-        self.assertEquals(("", "MMMMM", "IIIIM"),
-                          c._get_profile_overlap_tuple(42,47))
-        self.assertEquals(("MMMMM", "IIIIM", ""),
-                          c._get_profile_overlap_tuple(47, 48))
-
-    def test_get_profile_overlap_refNonconsumingOpsWithFlankingSoftclips(self):
-        c = cigar.cigar_editor_factory(42, "5S" "5M" "4I" "1M" "5S")
-        self.assertEquals(("", "SSSSS", "MMMMMIIIIMSSSSS"),
-                          c._get_profile_overlap_tuple(37,42))
-        self.assertEquals(("SSSSS", "MMMMM", "IIIIMSSSSS"),
-                          c._get_profile_overlap_tuple(42,47))
-        self.assertEquals(("SSSSSMMMMM","IIIIM", "SSSSS"),
-                          c._get_profile_overlap_tuple(47, 48))
-        self.assertEquals(("SSSSSMMMMMIIIIM", "SSSSS", ""),
-                          c._get_profile_overlap_tuple(48,53))
-
-    def test_get_profile_overlap_outOfBounds(self):
-        c = cigar.cigar_editor_factory(42, "2S" "6M" "2X")
-        self.assertEquals(("", "SS","MMMMMMXX"),
-                          c._get_profile_overlap_tuple(30,42))
-        self.assertEquals(("SSMMMMMM", "XX",""),
-                          c._get_profile_overlap_tuple(48,60))
-        self.assertEquals(("","","SSMMMMMMXX"),
-                          c._get_profile_overlap_tuple(20,30))
-        self.assertEquals(("SSMMMMMMXX", "", ""),
-                          c._get_profile_overlap_tuple(100,110))
+#     #TODO remove
+#     def test_get_profile_overlap_tuple(self):
+#         c = cigar.cigar_editor_factory(42, "10M")
+#         self.assertEquals(("","MMMMMMMMMM",""),
+#                           c._get_profile_overlap_tuple(42,52))
+# 
+#     #TODO remove
+#     def test_get_profile_overlap_refConsumingOps(self):
+#         c = cigar.cigar_editor_factory(42, "5M5X")
+#         self.assertEquals(("", "MMMMM", "XXXXX"),
+#                           c._get_profile_overlap_tuple(42,47))
+#         self.assertEquals(("MMMMM", "XXXXX", ""),
+#                           c._get_profile_overlap_tuple(47, 52))
+# 
+#     #TODO remove
+#     def test_get_profile_overlap_refNonconsumingOps(self):
+#         c = cigar.cigar_editor_factory(42, "5M4I1M")
+#         self.assertEquals(("", "MMMMM", "IIIIM"),
+#                           c._get_profile_overlap_tuple(42,47))
+#         self.assertEquals(("MMMMM", "IIIIM", ""),
+#                           c._get_profile_overlap_tuple(47, 48))
+# 
+#     #TODO remove
+#     def test_get_profile_overlap_refNonconsumingOpsWithFlankingSoftclips(self):
+#         c = cigar.cigar_editor_factory(42, "5S" "5M" "4I" "1M" "5S")
+#         self.assertEquals(("", "SSSSS", "MMMMMIIIIMSSSSS"),
+#                           c._get_profile_overlap_tuple(37,42))
+#         self.assertEquals(("SSSSS", "MMMMM", "IIIIMSSSSS"),
+#                           c._get_profile_overlap_tuple(42,47))
+#         self.assertEquals(("SSSSSMMMMM","IIIIM", "SSSSS"),
+#                           c._get_profile_overlap_tuple(47, 48))
+#         self.assertEquals(("SSSSSMMMMMIIIIM", "SSSSS", ""),
+#                           c._get_profile_overlap_tuple(48,53))
+# 
+#     #TODO remove
+#     def test_get_profile_overlap_outOfBounds(self):
+#         c = cigar.cigar_editor_factory(42, "2S" "6M" "2X")
+#         self.assertEquals(("", "SS","MMMMMMXX"),
+#                           c._get_profile_overlap_tuple(30,42))
+#         self.assertEquals(("SSMMMMMM", "XX",""),
+#                           c._get_profile_overlap_tuple(48,60))
+#         self.assertEquals(("","","SSMMMMMMXX"),
+#                           c._get_profile_overlap_tuple(20,30))
+#         self.assertEquals(("SSMMMMMMXX", "", ""),
+#                           c._get_profile_overlap_tuple(100,110))
 
     def test_softclip_target(self):
         c = cigar.cigar_editor_factory(42, "10M")
