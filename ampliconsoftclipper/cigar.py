@@ -76,7 +76,7 @@ class CigarUtil(object):
 
     def _pos_profiles(self, profile):
         '''Returns a list of tuple of first match index and a list of profiles.
-        The list elements match the genomic coordinates of the profile; i.e.
+        Each list element is the cigar profile for that reference position; i.e.
         the length of this list is the length of consumed reference bases.
         '''
         pos_profiles = list()
@@ -123,13 +123,12 @@ class CigarUtil(object):
         region_profile="".join(pos_profile[region_start_index:region_end_index])
         after_profile="".join(pos_profile[region_end_index:])
 
-        before = CigarUtil(read_start,
-                           cigar_profile=before_profile)
-        region = CigarUtil(constrain(region_start),
-                           cigar_profile=region_profile)
-        after = CigarUtil(constrain(region_end),
-                          cigar_profile=after_profile)
-        return (before, region, after)
+        return (CigarUtil(read_start,
+                          cigar_profile=before_profile),
+                CigarUtil(constrain(region_start),
+                          cigar_profile=region_profile),
+                CigarUtil(constrain(region_end),
+                          cigar_profile=after_profile))
 
     def softclip_target(self, target_start, target_end):
         (pre_target, target, post_target) = self._partition_cigar(target_start,
