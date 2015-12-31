@@ -4,6 +4,11 @@ import unittest
 from ampliconsoftclipper import cigar
 
 
+class MicroMock(object):
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
 class CigarUtilTestCase(unittest.TestCase):
     def test_ref_consuming(self):
         util = cigar.CigarUtil(0, "1M")
@@ -264,16 +269,33 @@ class CigarUtilTestCase(unittest.TestCase):
 
 
 class NullCigarTestCase(unittest.TestCase):
-    def test_null_cigar_false(self):
-        c = cigar.cigar_factory(42, "10M")
-        self.assertEquals(False, c.is_null())
-
     def test_null_cigar(self):
-        c = cigar.cigar_factory(42, "*")
+        c = cigar.NullCigarUtil(reference_start=42)
         self.assertEquals("*", c.cigar)
         self.assertEquals("*", c.softclip_target(0,100).cigar)
         self.assertEquals(42, c.softclip_target(0,100).reference_start)
-        self.assertEquals(True, c.is_null())
 
-    #test malformed cigar
-    #test softclips eliminate all matches
+
+class CigartestCase(unittest.TestCase):
+    def test_cigar_factory(self):
+        mock_read = MicroMock(reference_start=42, cigarstring="10M")
+        c = cigar.cigar_factory(mock_read)
+        self.assertIsInstance(c, cigar.CigarUtil)
+        self.assertEquals(42, c.reference_start)
+        self.assertEquals("10M", c.cigar)
+
+    def test_cigar_factory_nullCigar(self):
+        mock_read = MicroMock(reference_start=42, cigarstring="*")
+        c = cigar.cigar_factory(mock_read)
+        self.assertIsInstance(c, cigar.NullCigarUtil)
+        self.assertEquals(42, c.reference_start)
+        self.assertEquals("*", c.cigar)
+
+        mock_read = MicroMock(reference_start=42, cigarstring="")
+        c = cigar.cigar_factory(mock_read)
+        self.assertIsInstance(c, cigar.NullCigarUtil)
+        self.assertEquals(42, c.reference_start)
+        self.assertEquals("*", c.cigar)
+
+#TODO: test malformed cigar
+#TODO: test edgecase where softclips eliminate all matches

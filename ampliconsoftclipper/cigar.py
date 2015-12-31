@@ -141,27 +141,27 @@ class CigarUtil(object):
         new_profile = pre_profile + target_profile + post_profile
         return CigarUtil(new_pos, cigar_profile = new_profile)
 
-    @staticmethod
-    def is_null():
-        return False
+#     @staticmethod
+#     def is_null():
+#         return False
 
 
-class NullCigar(object):
+class NullCigarUtil(object):
 #pylint: disable=unused-argument
-    def __init__(self, pos):
+    def __init__(self, reference_start):
         self.cigar = "*"
-        self.reference_start = pos
+        self.reference_start = reference_start
 
     def softclip_target(self, target_start, target_end):
         return self
 
-    @staticmethod
-    def is_null():
-        return True
+#     @staticmethod
+#     def is_null():
+#         return True
 
-def cigar_factory(pos, cigar_string):
-    if not cigar_string or cigar_string == "*":
-        return NullCigar(pos)
+def cigar_factory(read):
+    if not read.cigarstring or read.cigarstring == "*":
+        return NullCigarUtil(read.reference_start)
     else:
-        return CigarUtil(pos, cigar_string)
+        return CigarUtil(read.reference_start, read.cigarstring)
 
