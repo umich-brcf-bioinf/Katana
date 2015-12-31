@@ -6,7 +6,24 @@ import os.path
 import pysam
 from testfixtures.tempdirectory import TempDirectory
 import unittest
+import sys
+try:
+    from StringIO import StringIO
+except ImportError:
+    from io import StringIO
 
+
+class ClipperBaseTestCase(unittest.TestCase):
+    def setUp(self):
+        unittest.TestCase.setUp(self)
+        self.stderr = StringIO()
+        self.saved_stderr = sys.stderr
+        sys.stderr = self.stderr
+
+    def tearDown(self):
+        self.stderr.close()
+        sys.stderr = self.saved_stderr
+        unittest.TestCase.tearDown(self)
 
 class MicroMock(object):
     def __init__(self, **kwargs):
@@ -71,7 +88,7 @@ class MockWriter(object):
     def write(self, obj):
         self._write_calls.append(obj)
 
-class ClipperTestCase(unittest.TestCase):
+class ClipperTestCase(ClipperBaseTestCase):
     def test_is_positive_strand(self):
         read = MicroMock(flag=0b101111)
         self.assertEquals(True, clipper._is_positive_strand(read))
@@ -96,7 +113,7 @@ class ClipperTestCase(unittest.TestCase):
         self.assertEquals(("foo", False, "chr10", 42), actual_key)
 
     def test_build_read_transformations(self):
-        primer_pair = clipper.PrimerPair(target_id="target_1",
+        primer_pair = clipper._PrimerPair(target_id="target_1",
                                          chrom="chr42",
                                          sense_primer_region=(100,102),
                                          antisense_primer_region=(148,150))
@@ -129,7 +146,7 @@ class ClipperTestCase(unittest.TestCase):
         self.assertEquals((primer_pair, 140, "8M2S"),
                           actual_read_transforms[key2])
         key3 = ("read3", True, "chr42", 333)
-        self.assertEquals((clipper.PrimerPair.NULL_PRIMER_PAIR, 333, "10M"),
+        self.assertEquals((clipper._PrimerPair.NULL_PRIMER_PAIR, 333, "10M"),
                           actual_read_transforms[key3])
 
     def test_handle_reads(self):
@@ -153,7 +170,7 @@ class ClipperTestCase(unittest.TestCase):
         self.assertEquals(1, handler3.end_calls)
 
 
-class WriteReadHandlerTestCase(unittest.TestCase):
+class WriteReadHandlerTestCase(ClipperBaseTestCase):
     #pylint: disable=no-member,too-many-arguments
     @staticmethod
     def make_bam_file(filename, reads, header=None):
@@ -204,7 +221,7 @@ class WriteReadHandlerTestCase(unittest.TestCase):
             input_bam_filename = os.path.join(tmp_dir.path, "input.bam")
             output_bam_filename = os.path.join(tmp_dir.path, "output.bam")
             self.make_bam_file(input_bam_filename, [self.build_read()])
-            handler = clipper.WriteReadHandler(input_bam_filename,
+            handler = clipper._WriteReadHandler(input_bam_filename,
                                                output_bam_filename)
             read1 = self.build_read(query_name="read1")
             read2 = self.build_read(query_name="read2")
@@ -226,7 +243,7 @@ class WriteReadHandlerTestCase(unittest.TestCase):
 
 class PrimerPairTestCase(unittest.TestCase):
     def test_init(self):
-        primer_pair = clipper.PrimerPair(target_id="target_1",
+        primer_pair = clipper._PrimerPair(target_id="target_1",
                                          chrom="chr42",
                                          sense_primer_region=(100,110),
                                          antisense_primer_region=(140,150))
@@ -235,24 +252,24 @@ class PrimerPairTestCase(unittest.TestCase):
         self.assertEquals(140, primer_pair._query_region_end)
 
     def test_all_primers(self):
-        primer_pair1 = clipper.PrimerPair(target_id="target_1",
+        primer_pair1 = clipper._PrimerPair(target_id="target_1",
                                           chrom="chr42",
                                           sense_primer_region=(100,108),
                                           antisense_primer_region=(145,150))
-        primer_pair2 = clipper.PrimerPair(target_id="target_1",
+        primer_pair2 = clipper._PrimerPair(target_id="target_1",
                                           chrom="chr42",
                                           sense_primer_region=(200,208),
                                           antisense_primer_region=(245,250))
-        actual_primers = clipper.PrimerPair._all_primers
-        self.assertEquals(primer_pair1, actual_primers[('chr42', 100, '+')])
-        self.assertEquals(primer_pair1, actual_primers[('chr42', 150, '-')])
-        self.assertEquals(primer_pair2, actual_primers[('chr42', 200, '+')])
-        self.assertEquals(primer_pair2, actual_primers[('chr42', 250, '-')])
+        actual_primers = clipper._PrimerPair._all_primers
+        self.assertEquals(primer_pair1, actual_primers[('chr42', 100, True)])
+        self.assertEquals(primer_pair1, actual_primers[('chr42', 150, False)])
+        self.assertEquals(primer_pair2, actual_primers[('chr42', 200, True)])
+        self.assertEquals(primer_pair2, actual_primers[('chr42', 250, False)])
         self.assertEquals(4, len(actual_primers))
 
 #     def test_softclip_read_positivePrimer(self):
-#         clipper.PrimerPair._all_primers = {}
-#         clipper.PrimerPair(target_id="target_1",
+#         clipper._PrimerPair._all_primers = {}
+#         clipper._PrimerPair(target_id="target_1",
 #                            chrom="chr42",
 #                            sense_start=100,
 #                            antisense_start=150,
@@ -266,7 +283,7 @@ class PrimerPairTestCase(unittest.TestCase):
 #         clipped_cigar_util = MockCigarUtil(reference_start=42, cigar="75X")
 #         mock_cigar_util = MockCigarUtil(_softclip_target_return=clipped_cigar_util)
 # 
-#         clipper.PrimerPair.softclip_read(read, mock_cigar_util)
+#         clipper._PrimerPair.softclip_read(read, mock_cigar_util)
 # 
 #         self.assertEquals(42, read.__dict__["reference_start"])
 #         self.assertEquals("75X", read.__dict__["cigarstring"])
@@ -274,8 +291,8 @@ class PrimerPairTestCase(unittest.TestCase):
 # 
 
     def test_get_primer_pair_matchPositiveStrand(self):
-        clipper.PrimerPair._all_primers = {}
-        clipper.PrimerPair(target_id="target_1",
+        clipper._PrimerPair._all_primers = {}
+        clipper._PrimerPair(target_id="target_1",
                            chrom="chr42",
                            sense_primer_region=(100,110),
                            antisense_primer_region=(140,150))
@@ -284,12 +301,12 @@ class PrimerPairTestCase(unittest.TestCase):
                         reference_start=100,
                         reference_end=242,
                         cigarstring="75M")
-        actual_primer_pair = clipper.PrimerPair.get_primer_pair(read)
+        actual_primer_pair = clipper._PrimerPair.get_primer_pair(read)
         self.assertEquals("target_1", actual_primer_pair.target_id)
 
     def test_get_primer_pair_matchNegativeStrand(self):
-        clipper.PrimerPair._all_primers = {}
-        clipper.PrimerPair(target_id="target_2",
+        clipper._PrimerPair._all_primers = {}
+        clipper._PrimerPair(target_id="target_2",
                            chrom="chr42",
                            sense_primer_region=(100,110),
                            antisense_primer_region=(140,150))
@@ -298,12 +315,12 @@ class PrimerPairTestCase(unittest.TestCase):
                         reference_start=42,
                         reference_end=150,
                         cigarstring="75M")
-        actual_primer_pair = clipper.PrimerPair.get_primer_pair(read)
+        actual_primer_pair = clipper._PrimerPair.get_primer_pair(read)
         self.assertEquals("target_2", actual_primer_pair.target_id)
 
     def test_get_primer_pair_noMatch(self):
-        clipper.PrimerPair._all_primers = {}
-        clipper.PrimerPair(target_id="target_1",
+        clipper._PrimerPair._all_primers = {}
+        clipper._PrimerPair(target_id="target_1",
                            chrom="chr42",
                            sense_primer_region=(100,110),
                            antisense_primer_region=(140,150))
@@ -312,11 +329,11 @@ class PrimerPairTestCase(unittest.TestCase):
                         reference_start=42,
                         reference_end=142,
                         cigarstring="75M")
-        actual_primer_pair = clipper.PrimerPair.get_primer_pair(read)
-        self.assertIsInstance(actual_primer_pair, clipper.NullPrimerPair)
+        actual_primer_pair = clipper._PrimerPair.get_primer_pair(read)
+        self.assertIsInstance(actual_primer_pair, clipper._NullPrimerPair)
 
     def test_softclip_primers(self):
-        primer_pair = clipper.PrimerPair(target_id="target_1",
+        primer_pair = clipper._PrimerPair(target_id="target_1",
                                          chrom="chr42",
                                          sense_primer_region=(100,110),
                                          antisense_primer_region=(140,150))
