@@ -1,8 +1,7 @@
 #! /usr/bin/env python
 """ Basic parser for the Rhim Thunderbolts manifest file. """
-
+#TODO: update module doc
 from __future__ import print_function, absolute_import, division
-
 import ampliconsoftclipper
 import ampliconsoftclipper.cigar as cigar
 from collections import defaultdict
@@ -16,7 +15,6 @@ import pysam
 
 __VERSION__ = ampliconsoftclipper.__version__
 
-_SAM_FLAG_NEGATIVE_STRAND = 0x10
 
 # I would rather just say pysam.index(...), but since that global is
 # added dynamically, Eclipse flags this as a compilation problem. So
@@ -24,14 +22,6 @@ _SAM_FLAG_NEGATIVE_STRAND = 0x10
 PYSAM_INDEX = pysam.SamtoolsDispatcher("index", None).__call__
 PYSAM_SORT = pysam.SamtoolsDispatcher("sort", None).__call__
 
-def _is_positive_strand(read):
-    return read.flag & _SAM_FLAG_NEGATIVE_STRAND == 0
-
-def _build_read_transform_key(read):
-    return (read.query_name,
-            _is_positive_strand(read),
-            read.reference_name,
-            read.reference_start)
 
 def _log(msg_format, *args):
     timestamp = datetime.now().strftime('%Y/%m/%d %H:%M:%S')
@@ -44,20 +34,22 @@ def _log(msg_format, *args):
 
 
 class Read(object):
+    '''Lightweight wrapper around AlignedSegment'''
     def __init__(self, aligned_segment):
         self.aligned_segment = aligned_segment
 
-    #TODO: Simplify using is_reverse?
-    def _is_positive_strand(self):
-        return self.aligned_segment.flag & _SAM_FLAG_NEGATIVE_STRAND == 0
+    @property
+    def is_positive_strand(self):
+        return not self.aligned_segment.is_reverse
 
     @property
     def key(self):
         return (self.aligned_segment.query_name,
-                _is_positive_strand(self.aligned_segment),
+                self.is_positive_strand,
                 self.aligned_segment.reference_name,
                 self.aligned_segment.reference_start)
 
+    @property
     def mate_key(self):
         if not self.aligned_segment.is_paired \
                 or self.aligned_segment.mate_is_unmapped:
@@ -80,6 +72,10 @@ class Read(object):
         self.aligned_segment.reference_start = value
 
     @property
+    def reference_end(self):
+        return self.aligned_segment.reference_end
+
+    @property
     def cigarstring(self):
         return self.aligned_segment.cigarstring
 
@@ -89,6 +85,12 @@ class Read(object):
 
     def set_tag(self, tag_name, tag_value, tag_type):
         self.aligned_segment.set_tag(tag_name, tag_value, tag_type)
+
+    #TODO: test
+    @staticmethod
+    def iter(aligned_segment_iter):
+        for aligned_segment in aligned_segment_iter:
+            yield Read(aligned_segment)
 
 class _NullPrimerPair(object):
     #pylint: disable=too-few-public-methods
@@ -103,8 +105,8 @@ class _NullPrimerPair(object):
 
 
 class _PrimerPair(object):
-    '''Sense start and antisense regions should be start and end (exclusive),
-    zero-based, positive genomic index.'''
+    '''Sense start and antisense regions should be start and end (inclusive and
+    exclusive respectively), zero-based, positive genomic index.'''
 
     _all_primers = {}
     NULL_PRIMER_PAIR = _NullPrimerPair()
@@ -115,8 +117,8 @@ class _PrimerPair(object):
                  sense_primer_region,
                  antisense_primer_region):
         self.target_id = target_id
-        self.chrom = chrom #TODO: test
-        self.sense_start = sense_primer_region[0] #TODO: test
+        self.chrom = chrom
+        self.sense_start = sense_primer_region[0]
         self._query_region_start = sense_primer_region[1]
         self._query_region_end =  antisense_primer_region[0]
         self._add_primer(chrom,
@@ -131,13 +133,21 @@ class _PrimerPair(object):
 
     @staticmethod
     def _key_for_read(read):
-        if _is_positive_strand(read):
+        if read.is_positive_strand:
             return (read.reference_name, read.reference_start, True)
         else:
             return (read.reference_name, read.reference_end, False)
 
     @staticmethod
     def get_primer_pair(read):
+        '''Matches a read to a primer pair based on exact start position of the
+        read; returns NullPrimerPair if no match.
+
+        Note this exact approach will disqualify some otherwise valid reads,
+        e.g. if a read adapter is not trimmed precisely, those reads will have
+        an "early start" and will not be correctly matched with their primer
+        pair.
+        '''
         try:
             read_key = _PrimerPair._key_for_read(read)
             primer_pair = _PrimerPair._all_primers[read_key]
@@ -161,6 +171,7 @@ class _ReadHandler(object):
 
 #TODO: Add PG and CO header lines for tags
 class _WriteReadHandler(_ReadHandler):
+    '''Writes reads to a BAM file (ultimately sorting and indexing the BAM).'''
     def __init__(self, input_bam_filename, output_bam_filename):
         self._input_bam_filename = input_bam_filename
         output_dir = os.path.dirname(output_bam_filename)
@@ -183,7 +194,7 @@ class _WriteReadHandler(_ReadHandler):
                 input_bam.close()
 
     def handle(self, read):
-        self._bamfile.write(read)
+        self._bamfile.write(read.aligned_segment)
 
     #TODO: test sort/index
     def end(self):
@@ -198,33 +209,27 @@ class _WriteReadHandler(_ReadHandler):
 
 
 class _TransformReadHandler(_ReadHandler):
-    def __init__(self,
-                 read_transformations,
-                 key_builder=_build_read_transform_key):
+    '''Updates reference_start and cigar string.'''
+    def __init__(self, read_transformations):
         self._read_transformations = read_transformations
-        self._key_builder = key_builder
 
     #TODO: test
     def handle(self, read):
-        key = self._key_builder(read)
         (dummy,
          new_reference_start,
-         new_cigar_string) = self._read_transformations[key]
+         new_cigar_string) = self._read_transformations[read.key]
         read.reference_start = new_reference_start
         read.cigarstring = new_cigar_string
 
 
 class _TagReadHandler(_ReadHandler):
-    def __init__(self,
-                 read_transformations,
-                 key_builder=_build_read_transform_key):
+    '''Adds informational/explanatory tags.'''
+    def __init__(self, read_transformations):
         self._read_transformations = read_transformations
-        self._key_builder = key_builder
 
     #TODO: test
     def handle(self, read):
-        key = self._key_builder(read)
-        primer_pair = self._read_transformations[key][0]
+        primer_pair = self._read_transformations[read.key][0]
         read.set_tag("X0", primer_pair.target_id, "Z")
         read.set_tag("X1", read.cigarstring, "Z")
         read.set_tag("X2", read.reference_start, "i")
@@ -233,12 +238,11 @@ class _TagReadHandler(_ReadHandler):
 #TODO: Capture paired
 #TODO: Also emit stats file
 class _CaptureStatsHandler(_ReadHandler):
-    def __init__(self,
-                 read_transformations,
-                 key_builder=_build_read_transform_key):
+    '''Logs simple summary statistics on how reads were matched with primers.'''
+
+    def __init__(self, read_transformations):
         self._read_transformations = read_transformations
         self._total_read_count = len(read_transformations)
-        self._key_builder = key_builder
         self._primer_stats = defaultdict(int)
 
     def _percent(self, primer, is_sense):
@@ -247,9 +251,8 @@ class _CaptureStatsHandler(_ReadHandler):
 
     #TODO: test
     def handle(self, read):
-        read_key = self._key_builder(read)
-        primer_pair = self._read_transformations[read_key][0]
-        stat_key = (primer_pair, _is_positive_strand(read))
+        primer_pair = self._read_transformations[read.key][0]
+        stat_key = (primer_pair, read.is_positive_strand)
         self._primer_stats[stat_key] += 1
 
     #TODO: test
@@ -277,10 +280,9 @@ def _build_read_transformations(read_iter):
         primer_pair = _PrimerPair.get_primer_pair(read)
         old_cigar = cigar.cigar_factory(read)
         new_cigar = primer_pair.softclip_primers(old_cigar)
-        key = _build_read_transform_key(read)
-        read_transformations[key] = (primer_pair,
-                                     new_cigar.reference_start,
-                                     new_cigar.cigar)
+        read_transformations[read.key] = (primer_pair,
+                                          new_cigar.reference_start,
+                                          new_cigar.cigar)
         read_count += 1
     _log("Read [{}] alignments", read_count)
     return read_transformations
@@ -312,6 +314,7 @@ def _read_primer_pairs(base_reader):
 #TODO: guard if input bam regions disjoint with primer regions
 #TODO: guard if less than 5% reads transformed
 #TODO: argparse
+#TODO: allow suppress/divert unmatched reads
 def main(command_line_args=None):
 
     if not command_line_args:
@@ -334,7 +337,8 @@ def main(command_line_args=None):
     try:
         _log("Reading alignments from BAM [{}]", input_bam_filename)
         input_bamfile = pysam.AlignmentFile(input_bam_filename,"rb")
-        read_iter = input_bamfile.fetch()
+        aligned_segment_iter = input_bamfile.fetch()
+        read_iter = Read.iter(aligned_segment_iter)
         read_transformations = _build_read_transformations(read_iter)
 
         _log("Writing transformed alignments to [{}]", output_bam_filename)
@@ -342,7 +346,8 @@ def main(command_line_args=None):
                     _TagReadHandler(read_transformations),
                     _TransformReadHandler(read_transformations),
                     _WriteReadHandler(input_bam_filename, output_bam_filename),]
-        read_iter = input_bamfile.fetch()
+        aligned_segment_iter = input_bamfile.fetch()
+        read_iter = Read.iter(aligned_segment_iter)
         _handle_reads(read_iter, handlers)
     except Exception as exception:
         _log("ERROR: An unexpected error occurred")

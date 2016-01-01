@@ -89,65 +89,42 @@ class MockWriter(object):
         self._write_calls.append(obj)
 
 class ClipperTestCase(ClipperBaseTestCase):
-    def test_is_positive_strand(self):
-        read = MicroMock(flag=0b101111)
-        self.assertEquals(True, clipper._is_positive_strand(read))
-        read = MicroMock(flag=0b010000)
-        self.assertEquals(False, clipper._is_positive_strand(read))
-        read = MicroMock(flag=0b110011)
-        self.assertEquals(False, clipper._is_positive_strand(read))
-
-    def test_build_read_transform_key(self):
-        read = MockRead(query_name="foo",
-                        flag=1,
-                        reference_name="chr10",
-                        reference_start=42)
-        actual_key = clipper._build_read_transform_key(read)
-        self.assertEquals(("foo", True, "chr10", 42), actual_key)
-
-        read = MockRead(query_name="foo",
-                        flag=16,
-                        reference_name="chr10",
-                        reference_start=42)
-        actual_key = clipper._build_read_transform_key(read)
-        self.assertEquals(("foo", False, "chr10", 42), actual_key)
-
     def test_build_read_transformations(self):
         primer_pair = clipper._PrimerPair(target_id="target_1",
                                          chrom="chr42",
                                          sense_primer_region=(100,102),
                                          antisense_primer_region=(148,150))
         read1 = MockRead(query_name="read1-sense",
-                        flag=1,
+                        is_positive_strand=True,
                         reference_name="chr42",
                         reference_start=100,
                         reference_end=150,
-                        cigarstring="10M")
+                        cigarstring="10M",
+                        key=111)
         read2 = MockRead(query_name="read2-antisense",
-                        flag=16,
+                        is_positive_strand=False,
                         reference_name="chr42",
                         reference_start=140,
                         reference_end=150,
-                        cigarstring="10M")
+                        cigarstring="10M",
+                        key=222)
         read3 = MockRead(query_name="read3",
-                        flag=1,
+                        is_positive_strand=True,
                         reference_name="chr42",
                         reference_start=333,
                         reference_end=343,
-                        cigarstring="10M")
+                        cigarstring="10M",
+                        key=333)
 
         read_iter = iter([read1, read2, read3])
         actual_read_transforms = clipper._build_read_transformations(read_iter)
         self.assertEquals(3, len(actual_read_transforms))
-        key1 = ("read1-sense", True, "chr42", 100)
         self.assertEquals((primer_pair, 102, "2S8M"),
-                          actual_read_transforms[key1])
-        key2 = ("read2-antisense", False, "chr42", 140)
+                          actual_read_transforms[111])
         self.assertEquals((primer_pair, 140, "8M2S"),
-                          actual_read_transforms[key2])
-        key3 = ("read3", True, "chr42", 333)
+                          actual_read_transforms[222])
         self.assertEquals((clipper._PrimerPair.NULL_PRIMER_PAIR, 333, "10M"),
-                          actual_read_transforms[key3])
+                          actual_read_transforms[333])
 
     def test_handle_reads(self):
         handler1 = MockReadHandler()
@@ -180,7 +157,7 @@ class WriteReadHandlerTestCase(ClipperBaseTestCase):
                              {'LN': 1584, 'SN': 'chr2'}] }
         outfile = pysam.AlignmentFile(filename, "wb", header=header)
         for read in reads:
-            outfile.write(read)
+            outfile.write(read.aligned_segment)
         outfile.close()
         clipper.PYSAM_INDEX(filename)
 
@@ -214,7 +191,7 @@ class WriteReadHandlerTestCase(ClipperBaseTestCase):
         if tags is None:
             a.tags = (("NM", 1),
                       ("RG", "L1"))
-        return a
+        return clipper.Read(a)
 
     def test_handle(self):
         with TempDirectory() as tmp_dir:
@@ -240,14 +217,87 @@ class WriteReadHandlerTestCase(ClipperBaseTestCase):
         self.assertEquals("read1", actual_reads[0].query_name)
         self.assertEquals("read2", actual_reads[1].query_name)
 
+class ReadTestCase(ClipperBaseTestCase):
+    def test_init(self):
+        aligned_segment = MockRead(query_name="read1",
+                                   reference_name="chr1",
+                                   reference_start=100,
+                                   reference_end=110,
+                                   cigarstring="10M")
+        read = clipper.Read(aligned_segment)
+        self.assertEquals("chr1", read.reference_name)
+        self.assertEquals(100, read.reference_start)
+        self.assertEquals(110, read.reference_end)
+        self.assertEquals("10M", read.cigarstring)
 
-class PrimerPairTestCase(unittest.TestCase):
+    def test_mutatorsPassThroughToAlignedSegment(self):
+        aligned_segment = MockRead(query_name="read1",
+                                   reference_name="chr1",
+                                   reference_start=100,
+                                   cigarstring="10M")
+        read = clipper.Read(aligned_segment)
+        read.reference_start = 142
+        read.cigarstring = "10S"
+        self.assertEquals(142, aligned_segment.__dict__['reference_start'])
+        self.assertEquals("10S", aligned_segment.__dict__['cigarstring'])
+
+    def test_is_positive(self):
+        read = clipper.Read(MockRead(is_reverse=False))
+        self.assertEquals(True, read.is_positive_strand)
+        read = clipper.Read(MockRead(is_reverse=True))
+        self.assertEquals(False, read.is_positive_strand)
+
+    def test_key(self):
+        aligned_segment = MockRead(query_name="read1",
+                                   reference_name="chr1",
+                                   reference_start=100,
+                                   is_reverse=False)
+        read = clipper.Read(aligned_segment)
+        expected_key = ("read1", True, "chr1", 100)
+        self.assertEquals(expected_key, read.key)
+
+    def test_mate_key(self):
+        aligned_segment = MockRead(query_name="read1",
+                                   is_paired=True,
+                                   mate_is_unmapped=False,
+                                   mate_is_reverse=True,
+                                   next_reference_name="chr2",
+                                   next_reference_start=200)
+        read = clipper.Read(aligned_segment)
+        expected_key = ("read1", False, "chr2", 200)
+        self.assertEquals(expected_key, read.mate_key)
+
+    def test_mate_key_noneWhenNoMate(self):
+        #pylint: disable=attribute-defined-outside-init
+        aligned_segment = MockRead(query_name="read1",
+                                   is_paired=True,
+                                   mate_is_unmapped=False,
+                                   mate_is_reverse=True,
+                                   next_reference_name="chr2",
+                                   next_reference_start=200)
+        aligned_segment.is_paired=False
+        self.assertEquals(None, clipper.Read(aligned_segment).mate_key)
+        aligned_segment.is_paired=True
+
+        aligned_segment.mate_is_unmapped=True
+        self.assertEquals(None, clipper.Read(aligned_segment).mate_key)
+        aligned_segment.mate_is_unmapped=True
+
+    def test_set_tag(self):
+        aligned_segment = MockRead()
+        read = clipper.Read(aligned_segment)
+        read.set_tag("name", "value", "type")
+        self.assertEquals("name:type:value", aligned_segment._tags["name"])
+
+class PrimerPairTestCase(ClipperBaseTestCase):
     def test_init(self):
         primer_pair = clipper._PrimerPair(target_id="target_1",
                                          chrom="chr42",
                                          sense_primer_region=(100,110),
                                          antisense_primer_region=(140,150))
         self.assertEquals("target_1", primer_pair.target_id)
+        self.assertEquals("chr42", primer_pair.chrom)
+        self.assertEquals(100, primer_pair.sense_start)
         self.assertEquals(110, primer_pair._query_region_start)
         self.assertEquals(140, primer_pair._query_region_end)
 
@@ -267,29 +317,6 @@ class PrimerPairTestCase(unittest.TestCase):
         self.assertEquals(primer_pair2, actual_primers[('chr42', 250, False)])
         self.assertEquals(4, len(actual_primers))
 
-#     def test_softclip_read_positivePrimer(self):
-#         clipper._PrimerPair._all_primers = {}
-#         clipper._PrimerPair(target_id="target_1",
-#                            chrom="chr42",
-#                            sense_start=100,
-#                            antisense_start=150,
-#                            sense_sequence="AACCGGTT",
-#                            antisense_sequence="CTTTA")
-#         read = MockRead(reference_name="chr42",
-#                         flag=0,
-#                         reference_start=100,
-#                         reference_end=200,
-#                         cigarstring="75M")
-#         clipped_cigar_util = MockCigarUtil(reference_start=42, cigar="75X")
-#         mock_cigar_util = MockCigarUtil(_softclip_target_return=clipped_cigar_util)
-# 
-#         clipper._PrimerPair.softclip_read(read, mock_cigar_util)
-# 
-#         self.assertEquals(42, read.__dict__["reference_start"])
-#         self.assertEquals("75X", read.__dict__["cigarstring"])
-#         self.assertEquals({"X0" : "X0:Z:chr42|100|+|target_1"}, read._tags)
-# 
-
     def test_get_primer_pair_matchPositiveStrand(self):
         clipper._PrimerPair._all_primers = {}
         clipper._PrimerPair(target_id="target_1",
@@ -297,7 +324,7 @@ class PrimerPairTestCase(unittest.TestCase):
                            sense_primer_region=(100,110),
                            antisense_primer_region=(140,150))
         read = MockRead(reference_name="chr42",
-                        flag=0,
+                        is_positive_strand=True,
                         reference_start=100,
                         reference_end=242,
                         cigarstring="75M")
@@ -311,7 +338,7 @@ class PrimerPairTestCase(unittest.TestCase):
                            sense_primer_region=(100,110),
                            antisense_primer_region=(140,150))
         read = MockRead(reference_name="chr42",
-                        flag=16,
+                        is_positive_strand=False,
                         reference_start=42,
                         reference_end=150,
                         cigarstring="75M")
@@ -325,7 +352,7 @@ class PrimerPairTestCase(unittest.TestCase):
                            sense_primer_region=(100,110),
                            antisense_primer_region=(140,150))
         read = MockRead(reference_name="chrX",
-                        flag=0,
+                        is_positive_strand=True,
                         reference_start=42,
                         reference_end=142,
                         cigarstring="75M")
