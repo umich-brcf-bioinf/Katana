@@ -1,6 +1,7 @@
 #pylint: disable=invalid-name, too-few-public-methods, too-many-public-methods
 from __future__ import print_function, absolute_import
 from ampliconsoftclipper import clipper
+from ampliconsoftclipper import readhandler
 import unittest
 import sys
 try:
@@ -70,6 +71,7 @@ class MockReadHandler(MicroMock):
         self.begin_calls=0
         self.handle_calls = []
         self.end_calls = 0
+        self.handle_raise = lambda x,y: False
         super(MockReadHandler, self).__init__(**kwargs)
 
     def begin(self):
@@ -77,6 +79,8 @@ class MockReadHandler(MicroMock):
 
     def handle(self, read, read_transformation):
         self.handle_calls.append((read, read_transformation))
+        if self.handle_raise and self.handle_raise(read, read_transformation):
+            raise StopIteration()
 
     def end(self):
         self.end_calls += 1
@@ -97,6 +101,29 @@ class MockPrimerPair(MicroMock):
 
 
 class ClipperTestCase(ClipperBaseTestCase):
+    def test_build_handlers_excludeUnmatchedReads(self):
+        actual_handlers = clipper._build_handlers("input_bam_filename",
+                                                  "output_bam_filename",
+                                                  True)
+        actual_handler_classes = [x.__class__ for x in actual_handlers]
+        self.assertEquals([readhandler._StatsHandler,
+                           readhandler._ExcludeNonMatchedReadHandler,
+                           readhandler._AddTagsReadHandler,
+                           readhandler._TransformReadHandler,
+                           readhandler._WriteReadHandler],
+                          actual_handler_classes)
+
+    def test_build_handlers_includeUnmatchedReads(self):
+        actual_handlers = clipper._build_handlers("input_bam_filename",
+                                                  "output_bam_filename",
+                                                  False)
+        actual_handler_classes = [x.__class__ for x in actual_handlers]
+        self.assertEquals([readhandler._StatsHandler,
+                           readhandler._AddTagsReadHandler,
+                           readhandler._TransformReadHandler,
+                           readhandler._WriteReadHandler],
+                          actual_handler_classes)
+
     def test_build_read_transformations(self):
         primer_pair = clipper._PrimerPair(target_id="target_1",
                                          chrom="chr42",
@@ -162,6 +189,38 @@ class ClipperTestCase(ClipperBaseTestCase):
         self.assertEquals(1, handler1.end_calls)
         self.assertEquals(1, handler2.end_calls)
         self.assertEquals(1, handler3.end_calls)
+
+    def test_handle_reads_stopIterationSkipsHandlers(self):
+        read1 = MockRead(key=1)
+        read2 = MockRead(key=2)
+        read3 = MockRead(key=3)
+        handler1 = MockReadHandler()
+        handler2 = MockReadHandler(handle_raise=lambda read,_: read.key==2)
+        handler3 = MockReadHandler()
+        handlers = [handler1, handler2, handler3]
+        transform1 = ()
+        transform2 = ()
+        transform3 = ()
+
+        read_transformations = {1: transform1, 2: transform2, 3:transform3}
+        read_iter = iter([read1, read2, read3])
+        clipper._handle_reads(handlers, read_iter, read_transformations)
+        self.assertEquals(1, handler1.begin_calls)
+        self.assertEquals(1, handler2.begin_calls)
+        self.assertEquals(1, handler3.begin_calls)
+
+        expected_calls12 = [(read1, transform1),
+                            (read2, transform2),
+                            (read3, transform3)]
+        expected_calls3 = [(read1, transform1),
+                           (read3, transform3)]
+        self.assertEquals(expected_calls12, handler1.handle_calls)
+        self.assertEquals(expected_calls12, handler2.handle_calls)
+        self.assertEquals(expected_calls3, handler3.handle_calls)
+        self.assertEquals(1, handler1.end_calls)
+        self.assertEquals(1, handler2.end_calls)
+        self.assertEquals(1, handler3.end_calls)
+
 
     def test_initialize_primer_pairs(self):
         clipper._PrimerPair._all_primers = {}

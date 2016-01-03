@@ -32,7 +32,7 @@ def _log(msg_format, *args):
         print(args)
     sys.stderr.flush()
 
-
+#TODO: To avoid circular dependencies, move this and other classes to util module (and reorg Mocks)
 #TODO: Capture mapped pairs for each primer
 #TODO: Capture overall mapped pairs
 #TODO: Capture unmatched primers
@@ -229,7 +229,7 @@ def _build_read_transformations(read_iter):
                                           new_cigar.reference_start,
                                           new_cigar.cigar)
         read_count += 1
-    _log("Read [{}] alignments", read_count)
+    _log("Built transforms for [{}] alignments", read_count)
     return read_transformations
 
 def _handle_reads(read_handlers, read_iter, read_transformations):
@@ -237,8 +237,11 @@ def _handle_reads(read_handlers, read_iter, read_transformations):
         handler.begin()
     for read in read_iter:
         read_transformation = read_transformations[read.key]
-        for handler in read_handlers:
-            handler.handle(read, read_transformation)
+        try:
+            for handler in read_handlers:
+                handler.handle(read, read_transformation)
+        except StopIteration:
+            pass
     for handler in read_handlers:
         handler.end()
 
@@ -253,6 +256,22 @@ def _initialize_primer_pairs(base_reader):
                    "chr" + row["Chr"],  #TODO: this prefix seems hackish?
                    (sense_start, sense_end),
                    (antisense_end, antisense_start))
+
+def _build_handlers(input_bam_filename,
+                    output_bam_filename,
+                    exclude_unmatched_reads):
+    stats = readhandler._StatsHandler(_PrimerStats(),
+                                      _PrimerStatsDumper(log_method=_log))
+    exclude = readhandler._ExcludeNonMatchedReadHandler(log_method=_log)
+    tag = readhandler._AddTagsReadHandler()
+    transform = readhandler._TransformReadHandler()
+    write = readhandler._WriteReadHandler(input_bam_filename,
+                                          output_bam_filename,
+                                          log_method=_log)
+    handlers = [stats, exclude, tag, transform, write]
+    if not exclude_unmatched_reads:
+        handlers.remove(exclude)
+    return handlers
 
 #TODO: test
 #TODO: deal if input bam missing index
@@ -283,16 +302,13 @@ def main(command_line_args=None):
         input_bamfile = pysam.AlignmentFile(input_bam_filename,"rb")
         aligned_segment_iter = input_bamfile.fetch()
         read_iter = _Read.iter(aligned_segment_iter)
+        _log("Building transformations")
         read_transformations = _build_read_transformations(read_iter)
 
         _log("Writing transformed alignments to [{}]", output_bam_filename)
-        handlers = [readhandler._StatsHandler(_PrimerStats(),
-                                              _PrimerStatsDumper(log_method=_log)),
-                    readhandler._AddTagsReadHandler(),
-                    readhandler._TransformReadHandler(),
-                    readhandler._WriteReadHandler(input_bam_filename,
-                                                  output_bam_filename,
-                                                  log_method=_log),]
+        handlers = _build_handlers(input_bam_filename,
+                                   output_bam_filename,
+                                   True)
         aligned_segment_iter = input_bamfile.fetch()
         read_iter = _Read.iter(aligned_segment_iter)
         _handle_reads(handlers, read_iter, read_transformations)

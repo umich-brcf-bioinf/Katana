@@ -31,6 +31,24 @@ class _AddTagsReadHandler(_BaseReadHandler):
         read.set_tag("X2", read.reference_start, "i")
         read.set_tag("X3", read.reference_end, "i")
 
+#TODO: test
+class _ExcludeNonMatchedReadHandler(_BaseReadHandler):
+    '''Excludes reads from further processing'''
+    STOP_ITERATION_EXCEPTION = StopIteration()
+    def __init__(self, log_method):
+        self._unmatched_count = 0
+        self._log_method = log_method
+
+    def handle(self, read, read_transformation):
+        primer_pair = read_transformation[0]
+        if primer_pair.is_unmatched():
+            self._unmatched_count += 1
+            raise self.STOP_ITERATION_EXCEPTION
+
+    def end(self):
+        msg = ("EXCLUDE|[{}] reads did not match with a primer and will be "
+               "excluded from the output")
+        self._log_method(msg, self._unmatched_count)
 
 class _StatsHandler(_BaseReadHandler):
     '''Processes reads and primers connecting PrimerStats and
@@ -74,6 +92,7 @@ class _WriteReadHandler(_BaseReadHandler):
         self._output_bam_filename = output_bam_filename
         self._bamfile = None
         self._log = log_method
+        self._read_count = 0
 
     def begin(self):
         #pylint: disable=no-member
@@ -88,15 +107,18 @@ class _WriteReadHandler(_BaseReadHandler):
                 input_bam.close()
 
     def handle(self, read, read_transformation):
+        self._read_count += 1
         self._bamfile.write(read.aligned_segment)
 
     def end(self):
         self._bamfile.close()
         self._bamfile = None
         output_root = os.path.splitext(self._output_bam_filename)[0]
-        self._log("Sorting BAM")
+        self._log("WRITE_BAM|sorting BAM")
         PYSAM_SORT(self._tmp_bam_filename, output_root)
-        self._log("Indexing BAM")
+        self._log("WRITE_BAM|indexing BAM")
         PYSAM_INDEX(self._output_bam_filename)
         os.remove(self._tmp_bam_filename)
-
+        self._log("WRITE_BAM|wrote [{}] alignments to [{}]",
+                  self._read_count,
+                  self._output_bam_filename)

@@ -197,7 +197,7 @@ class WriteReadHandlerTestCase(ReadHandlerBaseTestCase):
                       ("RG", "L1"))
         return MicroMock(aligned_segment=a)
 
-    def test_handle_sortsAndIndexes(self):
+    def test_end_sortsAndIndexes(self):
         with TempDirectory() as input_dir, TempDirectory() as output_dir:
             input_bam_filename = os.path.join(input_dir.path, "input.bam")
             self.make_bam_file(input_bam_filename, [self.build_read()])
