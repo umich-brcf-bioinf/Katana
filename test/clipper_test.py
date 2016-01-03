@@ -15,6 +15,7 @@ except ImportError:
 
 class ClipperBaseTestCase(unittest.TestCase):
     def setUp(self):
+        clipper._PrimerPair._all_primers = {}
         unittest.TestCase.setUp(self)
         self.stderr = StringIO()
         self.saved_stderr = sys.stderr
@@ -29,11 +30,42 @@ class MicroMock(object):
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
+class MockPrimerStatsDumper(MicroMock):
+    def __init__(self, **kwargs):
+        self._dump_calls=[]
+        super(MockPrimerStatsDumper, self).__init__(**kwargs)
+
+    def dump(self, primer_stats):
+        self._dump_calls.append(primer_stats)
+
+class MockLog(object):
+    def __init__(self):
+        self._log_calls = []
+
+    def log(self, msg_format, *args):
+        self._log_calls.append((msg_format, args))
+
+class MockPrimerStats(MicroMock):
+    def __init__(self, **kwargs):
+        self._add_read_primer_calls=[]
+        super(MockPrimerStats, self).__init__(**kwargs)
+
+    def add_read_primer(self, read, primer):
+        self._add_read_primer_calls.append((read, primer))
 
 class MockRead(MicroMock):
     def __init__(self, **kwargs):
         self._tags={}
         super(MockRead, self).__init__(**kwargs)
+
+    def set_tag(self, tag_name, tag_value, tag_type):
+        self._tags[tag_name] = "{}:{}:{}".format(tag_name, tag_type, tag_value)
+
+
+class MockAlignedSegment(MicroMock):
+    def __init__(self, **kwargs):
+        self._tags={}
+        super(MockAlignedSegment, self).__init__(**kwargs)
 
     def set_tag(self, tag_name, tag_value, tag_type):
         self._tags[tag_name] = "{}:{}:{}".format(tag_name, tag_type, tag_value)
@@ -146,6 +178,204 @@ class ClipperTestCase(ClipperBaseTestCase):
         self.assertEquals(1, handler2.end_calls)
         self.assertEquals(1, handler3.end_calls)
 
+    def test_initialize_primer_pairs(self):
+        clipper._PrimerPair._all_primers = {}
+        #pylint: disable=line-too-long
+        input_manifest = (\
+'''id|Customer TargetID|Chr|Genome Build|Sense Start|Antisense Start|Sense Sequence|Antisense Sequence
+1|NRAS_3|1|hg19 dbSNP137|111|222|ATCCGACAA|AGTACAAACT
+2|IDH1_1|2|hg19 dbSNP137|333|444|TGCCAACAT|TGGAAATCAC
+''').replace("|", "\t")
+        clipper._initialize_primer_pairs(StringIO(input_manifest))
+        actual_primers = clipper._PrimerPair._all_primers
+        self.assertEquals(4, len(actual_primers))
+        targets = set([primer.target_id for primer in actual_primers.values()])
+        self.assertEquals(set(["IDH1_1", "NRAS_3"]), targets)
+
+class AddTagsReadHandlerTestCase(ClipperBaseTestCase):
+    def test_handle(self):
+        #pylint: disable=no-member,too-many-arguments
+        original_reference_start = 100
+        original_reference_end = 110
+        original_cigar_string = "10M"
+        read = MockRead(key=42,
+                        reference_start=original_reference_start,
+                        reference_end=original_reference_end,
+                        cigarstring=original_cigar_string)
+        primer_pair_target = "target_1"
+        primer_pair = MockPrimerPair(target_id=primer_pair_target)
+
+        new_reference_start = 102
+        new_cigar_string = "2S8M"
+        transformations = {42: (primer_pair,
+                                new_reference_start,
+                                new_cigar_string)}
+        handler = clipper._AddTagsReadHandler(transformations)
+
+        handler.handle(read)
+
+        self.assertEquals("X0:Z:" + primer_pair_target,
+                          read._tags["X0"])
+        self.assertEquals("X1:Z:" + original_cigar_string,
+                          read._tags["X1"])
+        self.assertEquals("X2:i:" + str(original_reference_start),
+                          read._tags["X2"])
+        self.assertEquals("X3:i:" + str(original_reference_end),
+                          read._tags["X3"])
+
+class PrimerStatsTestCase(ClipperBaseTestCase):
+    def test_stat_keys(self):
+        self.assertEquals(7, len(clipper._PrimerStats.STAT_KEYS))
+
+    def test_total_read_count(self):
+        read_sense = MockRead(is_positive_strand=True)
+        primer_pair1 = MockPrimerPair(target_id="target_2",
+                                      chrom="chr2",
+                                      sense_start=222)
+        stats = clipper._PrimerStats()
+        self.assertEquals(0, stats.total_read_count)
+        stats.add_read_primer(read_sense, primer_pair1)
+        stats.add_read_primer(read_sense, primer_pair1)
+        stats.add_read_primer(read_sense, primer_pair1)
+        self.assertEquals(3, stats.total_read_count)
+
+    def test_primer_pairs(self):
+        read = MockRead(is_positive_strand=True)
+        primer_pair1 = MockPrimerPair(target_id="target_1",
+                                     chrom="chr1",
+                                     sense_start=222)
+        stats = clipper._PrimerStats()
+        stats.add_read_primer(read, primer_pair1)
+        self.assertEquals([primer_pair1], stats.primer_pairs)
+        stats.add_read_primer(read, primer_pair1)
+        self.assertEquals([primer_pair1], stats.primer_pairs)
+        primer_pair2 = MockPrimerPair(target_id="target_1",
+                                     chrom="chr1",
+                                     sense_start=555)
+        stats.add_read_primer(read, primer_pair2)
+        self.assertEquals([primer_pair1, primer_pair2], stats.primer_pairs)
+
+    def test_primer_pairs_sortedChromStartTarget(self):
+        read = MockRead(is_positive_strand=True)
+        expected_primer_pairs=[]
+        expected_primer_pairs.append(MockPrimerPair(target_id="target_2",
+                                                   chrom="chr2",
+                                                   sense_start=222))
+        expected_primer_pairs.append(MockPrimerPair(target_id="target_10",
+                                                   chrom="chr2",
+                                                   sense_start=222))
+        expected_primer_pairs.append(MockPrimerPair(target_id="target_1",
+                                                   chrom="chr2",
+                                                   sense_start=333))
+        expected_primer_pairs.append(MockPrimerPair(target_id="target_1",
+                                                   chrom="chr10",
+                                                   sense_start=111))
+        expected_primer_pairs.append(MockPrimerPair(target_id="target_1",
+                                                   chrom="chr10",
+                                                   sense_start=222))
+        stats = clipper._PrimerStats()
+        for primer_pair in expected_primer_pairs[::-1]:
+            stats.add_read_primer(read, primer_pair)
+        self.assertEquals(expected_primer_pairs,
+                          stats.primer_pairs)
+
+    def test_stats(self):
+        read_sense = MockRead(is_positive_strand=True)
+        read_antisense = MockRead(is_positive_strand=False)
+        primer_pair1 = MockPrimerPair(target_id="target_2",
+                                      chrom="chr2",
+                                      sense_start=222)
+        primer_pair2 = MockPrimerPair(target_id="target_10",
+                                      chrom="chr4",
+                                      sense_start=444)
+        stats = clipper._PrimerStats()
+        stats.add_read_primer(read_sense, primer_pair1)
+        stats.add_read_primer(read_sense, primer_pair2)
+        stats.add_read_primer(read_sense, primer_pair2)
+        stats.add_read_primer(read_antisense, primer_pair2)
+
+        self.assertEquals(2, len(stats.primer_pairs))
+
+        stats1 = stats.stats(primer_pair1)
+        self.assertEquals(len(clipper._PrimerStats.STAT_KEYS), len(stats1))
+        self.assertEquals("target_2", stats1["target_id"])
+        self.assertEquals("chr2", stats1["chrom"])
+        self.assertEquals(222, stats1["sense_start"])
+        self.assertEquals(1, stats1["sense_count"])
+        self.assertEquals(0, stats1["antisense_count"])
+        self.assertEquals(25, stats1["sense_percent"])
+        self.assertEquals(0, stats1["antisense_percent"])
+
+        stats2 = stats.stats(primer_pair2)
+        self.assertEquals(len(clipper._PrimerStats.STAT_KEYS), len(stats2))
+        self.assertEquals("target_10", stats2["target_id"])
+        self.assertEquals("chr4", stats2["chrom"])
+        self.assertEquals(444, stats2["sense_start"])
+        self.assertEquals(2, stats2["sense_count"])
+        self.assertEquals(1, stats2["antisense_count"])
+        self.assertEquals(50, stats2["sense_percent"])
+        self.assertEquals(25, stats2["antisense_percent"])
+
+
+class PrimerStatsDumperTestCase(ClipperBaseTestCase):
+    def test_dump(self):
+        mock_log = MockLog()
+        dumper = clipper._PrimerStatsDumper(log_method=mock_log.log)
+        stat_dict = {"primer1":{"statA":"A1", "statB":"B1"},
+                     "primer2":{"statA":"A2", "statB":"B2"}}
+        primer_stats = MicroMock(STAT_KEYS=["statA", "statB"],
+                                       primer_pairs=["primer1", "primer2"],
+                                       stats=lambda x: stat_dict[x])
+        dumper.dump(primer_stats)
+        self.assertEquals(3, len(mock_log._log_calls))
+        self.assertEquals('PRIMER_STATS|statA|statB', mock_log._log_calls[0][0])
+        self.assertEquals('PRIMER_STATS|A1|B1', mock_log._log_calls[1][0])
+        self.assertEquals('PRIMER_STATS|A2|B2', mock_log._log_calls[2][0])
+
+
+class StatsReadHandlerTestCase(ClipperBaseTestCase):
+    def test_handle(self):
+        read1 = MockRead(key=42, is_positive_strand=True)
+        read2 = MockRead(key=42, is_positive_strand=True)
+        primer_pair = MockPrimerPair(target_id="target_1",
+                                     chrom="chr1",
+                                     sense_start=242)
+        new_reference_start = 102
+        new_cigar_string = "2S8M"
+        transformations = {42: (primer_pair,
+                                new_reference_start,
+                                new_cigar_string)}
+        mock_primer_stats = MockPrimerStats()
+        mock_primer_stats_dumper = MockPrimerStatsDumper()
+        handler = clipper._StatsHandler(transformations,
+                                               mock_primer_stats,
+                                               mock_primer_stats_dumper)
+
+        handler.handle(read1)
+        handler.handle(read2)
+        expected_calls = [(read1, primer_pair), (read2, primer_pair)]
+        self.assertEquals(expected_calls,
+                          mock_primer_stats._add_read_primer_calls)
+
+        handler.end()
+        self.assertEquals([mock_primer_stats],
+                          mock_primer_stats_dumper._dump_calls)
+
+
+class TransformReadHandlerTestCase(ClipperBaseTestCase):
+    def test_handle(self):
+        #pylint: disable=no-member,too-many-arguments
+        read = MockRead(key=42, reference_start=100, cigarstring="10M")
+        primer_pair = None
+        new_reference_start = 102
+        new_cigar_string = "2S8M"
+        transformations = {42: (primer_pair,
+                                new_reference_start,
+                                new_cigar_string)}
+        handler = clipper._TransformReadHandler(transformations)
+        handler.handle(read)
+        self.assertEquals(102, read.reference_start)
+        self.assertEquals("2S8M", read.cigarstring)
 
 class WriteReadHandlerTestCase(ClipperBaseTestCase):
     #pylint: disable=no-member,too-many-arguments
@@ -191,103 +421,120 @@ class WriteReadHandlerTestCase(ClipperBaseTestCase):
         if tags is None:
             a.tags = (("NM", 1),
                       ("RG", "L1"))
-        return clipper.Read(a)
+        return clipper._Read(a)
 
-    def test_handle(self):
-        with TempDirectory() as tmp_dir:
-            input_bam_filename = os.path.join(tmp_dir.path, "input.bam")
-            output_bam_filename = os.path.join(tmp_dir.path, "output.bam")
+    def test_handle_sortsAndIndexes(self):
+        with TempDirectory() as input_dir, TempDirectory() as output_dir:
+            input_bam_filename = os.path.join(input_dir.path, "input.bam")
             self.make_bam_file(input_bam_filename, [self.build_read()])
+            output_bam_filename = os.path.join(output_dir.path, "output.bam")
             handler = clipper._WriteReadHandler(input_bam_filename,
                                                output_bam_filename)
-            read1 = self.build_read(query_name="read1")
-            read2 = self.build_read(query_name="read2")
+            read1 = self.build_read(query_name="read1",
+                                    reference_id=0,
+                                    reference_start=20)
+            read2 = self.build_read(query_name="read2",
+                                    reference_id=0,
+                                    reference_start=10)
 
             handler.begin()
             handler.handle(read1)
             handler.handle(read2)
             handler.end()
 
-            clipper.PYSAM_INDEX(output_bam_filename)
+            actual_files = sorted(os.listdir(output_dir.path))
+            self.assertEquals(["output.bam", "output.bam.bai"], actual_files)
             actual_bam = pysam.AlignmentFile(output_bam_filename, "rb")
             actual_reads = [read for read in actual_bam.fetch()]
             actual_bam.close()
 
         self.assertEquals(2, len(actual_reads))
-        self.assertEquals("read1", actual_reads[0].query_name)
-        self.assertEquals("read2", actual_reads[1].query_name)
+        self.assertEquals("read2", actual_reads[0].query_name)
+        self.assertEquals("read1", actual_reads[1].query_name)
 
 class ReadTestCase(ClipperBaseTestCase):
     def test_init(self):
-        aligned_segment = MockRead(query_name="read1",
-                                   reference_name="chr1",
-                                   reference_start=100,
-                                   reference_end=110,
-                                   cigarstring="10M")
-        read = clipper.Read(aligned_segment)
+        mock_aligned_segment = MockAlignedSegment(query_name="read1",
+                                                  reference_name="chr1",
+                                                  reference_start=100,
+                                                  reference_end=110,
+                                                  cigarstring="10M")
+        read = clipper._Read(mock_aligned_segment)
         self.assertEquals("chr1", read.reference_name)
         self.assertEquals(100, read.reference_start)
         self.assertEquals(110, read.reference_end)
         self.assertEquals("10M", read.cigarstring)
 
     def test_mutatorsPassThroughToAlignedSegment(self):
-        aligned_segment = MockRead(query_name="read1",
-                                   reference_name="chr1",
-                                   reference_start=100,
-                                   cigarstring="10M")
-        read = clipper.Read(aligned_segment)
+        mock_aligned_segment = MockAlignedSegment(query_name="read1",
+                                                  reference_name="chr1",
+                                                  reference_start=100,
+                                                  cigarstring="10M")
+        read = clipper._Read(mock_aligned_segment)
         read.reference_start = 142
         read.cigarstring = "10S"
-        self.assertEquals(142, aligned_segment.__dict__['reference_start'])
-        self.assertEquals("10S", aligned_segment.__dict__['cigarstring'])
+        self.assertEquals(142, mock_aligned_segment.__dict__['reference_start'])
+        self.assertEquals("10S", mock_aligned_segment.__dict__['cigarstring'])
 
     def test_is_positive(self):
-        read = clipper.Read(MockRead(is_reverse=False))
+        read = clipper._Read(MockAlignedSegment(is_reverse=False))
         self.assertEquals(True, read.is_positive_strand)
-        read = clipper.Read(MockRead(is_reverse=True))
+        read = clipper._Read(MockAlignedSegment(is_reverse=True))
         self.assertEquals(False, read.is_positive_strand)
 
     def test_key(self):
-        aligned_segment = MockRead(query_name="read1",
-                                   reference_name="chr1",
-                                   reference_start=100,
-                                   is_reverse=False)
-        read = clipper.Read(aligned_segment)
+        mock_aligned_segment = MockAlignedSegment(query_name="read1",
+                                                  reference_name="chr1",
+                                                  reference_start=100,
+                                                  is_reverse=False)
+        read = clipper._Read(mock_aligned_segment)
         expected_key = ("read1", True, "chr1", 100)
         self.assertEquals(expected_key, read.key)
 
     def test_mate_key(self):
-        aligned_segment = MockRead(query_name="read1",
-                                   is_paired=True,
-                                   mate_is_unmapped=False,
-                                   mate_is_reverse=True,
-                                   next_reference_name="chr2",
-                                   next_reference_start=200)
-        read = clipper.Read(aligned_segment)
+        mock_aligned_segment = MockAlignedSegment(query_name="read1",
+                                                  is_paired=True,
+                                                  mate_is_unmapped=False,
+                                                  mate_is_reverse=True,
+                                                  next_reference_name="chr2",
+                                                  next_reference_start=200)
+        read = clipper._Read(mock_aligned_segment)
         expected_key = ("read1", False, "chr2", 200)
         self.assertEquals(expected_key, read.mate_key)
 
     def test_mate_key_noneWhenNoMate(self):
         #pylint: disable=attribute-defined-outside-init
-        aligned_segment = MockRead(query_name="read1",
-                                   is_paired=True,
-                                   mate_is_unmapped=False,
-                                   mate_is_reverse=True,
-                                   next_reference_name="chr2",
-                                   next_reference_start=200)
-        aligned_segment.is_paired=False
-        self.assertEquals(None, clipper.Read(aligned_segment).mate_key)
-        aligned_segment.is_paired=True
+        mock_aligned_segment = MockAlignedSegment(query_name="read1",
+                                                  is_paired=True,
+                                                  mate_is_unmapped=False,
+                                                  mate_is_reverse=True,
+                                                  next_reference_name="chr2",
+                                                  next_reference_start=200)
+        mock_aligned_segment.is_paired=False
+        self.assertEquals(None, clipper._Read(mock_aligned_segment).mate_key)
+        mock_aligned_segment.is_paired=True
 
-        aligned_segment.mate_is_unmapped=True
-        self.assertEquals(None, clipper.Read(aligned_segment).mate_key)
-        aligned_segment.mate_is_unmapped=True
+        mock_aligned_segment.mate_is_unmapped=True
+        self.assertEquals(None, clipper._Read(mock_aligned_segment).mate_key)
+        mock_aligned_segment.mate_is_unmapped=True
 
     def test_set_tag(self):
-        aligned_segment = MockRead()
-        read = clipper.Read(aligned_segment)
+        mock_aligned_segment = MockAlignedSegment()
+        read = clipper._Read(mock_aligned_segment)
         read.set_tag("name", "value", "type")
-        self.assertEquals("name:type:value", aligned_segment._tags["name"])
+        self.assertEquals("name:type:value", mock_aligned_segment._tags["name"])
+
+    def test_iter(self):
+        aligned_segment1 = MockAlignedSegment(query_name="read1")
+        aligned_segment2 = MockAlignedSegment(query_name="read2")
+        aligned_segment_iter = iter([aligned_segment1, aligned_segment2])
+        actual_iter = clipper._Read.iter(aligned_segment_iter)
+        actual_reads = [read for read in actual_iter]
+        self.assertEquals(2, len(actual_reads))
+        self.assertIsInstance(actual_reads[0], clipper._Read)
+        self.assertEquals(aligned_segment1, actual_reads[0].aligned_segment)
+        self.assertIsInstance(actual_reads[1], clipper._Read)
+        self.assertEquals(aligned_segment2, actual_reads[1].aligned_segment)
 
 class PrimerPairTestCase(ClipperBaseTestCase):
     def test_init(self):
