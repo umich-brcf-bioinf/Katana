@@ -2,26 +2,24 @@
 """Softclips primers at edge of aligned reads"""
 #TODO: elaborate module doc
 from __future__ import print_function, absolute_import, division
-import ampliconsoftclipper
-import ampliconsoftclipper.cigar as cigar
+
 from collections import defaultdict
 import csv
 from datetime import datetime
 import itertools
-import natsort
+import os
 import sys
 import traceback
-import os
+
+import natsort
 import pysam
 
+import ampliconsoftclipper
+import ampliconsoftclipper.cigar as cigar
+import ampliconsoftclipper.readhandler as readhandler
+
+
 __VERSION__ = ampliconsoftclipper.__version__
-
-
-# I would rather just say pysam.index(...), but since that global is
-# added dynamically, Eclipse flags this as a compilation problem. So
-# instead we connect directly to the pysam.SamtoolsDispatcher.
-PYSAM_INDEX = pysam.SamtoolsDispatcher("index", None).__call__
-PYSAM_SORT = pysam.SamtoolsDispatcher("sort", None).__call__
 
 
 #TODO: make this a logger object that writes to file and console and supports debug and info calls
@@ -104,6 +102,9 @@ class _NullPrimerPair(object):
     def softclip_primers(old_cigar):
         return old_cigar
 
+    @staticmethod
+    def is_unmatched():
+        return True
 
 class _PrimerPair(object):
     '''Sense start and antisense regions should be start and end (inclusive and
@@ -155,82 +156,49 @@ class _PrimerPair(object):
         except KeyError:
             return _PrimerPair.NULL_PRIMER_PAIR
 
+    @staticmethod
+    def is_unmatched():
+        return False
+
     def softclip_primers(self, old_cigar):
         return old_cigar.softclip_target(self._query_region_start,
                                          self._query_region_end)
 
 
-class _ReadHandler(object):
-    def begin(self):
-        pass
-    def handle(self, read):
-        pass
-    def end(self):
-        pass
+def _handle_reads(read_iter, read_handlers):
+    for handler in read_handlers:
+        handler.begin()
+    for read in read_iter:
+        for handler in read_handlers:
+            handler.handle(read)
+    for handler in read_handlers:
+        handler.end()
 
+def _initialize_primer_pairs(base_reader):
+    dict_reader = csv.DictReader(base_reader, delimiter='\t')
+    for row in dict_reader:
+        sense_start = int(row["Sense Start"]) - 1
+        sense_end = sense_start + len(row["Sense Sequence"])
+        antisense_start = int(row["Antisense Start"])
+        antisense_end = antisense_start - len(row["Antisense Sequence"])
+        _PrimerPair(row["Customer TargetID"],
+                   "chr" + row["Chr"],  #TODO: this prefix seems hackish?
+                   (sense_start, sense_end),
+                   (antisense_end, antisense_start))
 
-#TODO: Add PG and CO header lines for tags
-class _WriteReadHandler(_ReadHandler):
-    '''Writes reads to a BAM file (ultimately sorting and indexing the BAM).'''
-    def __init__(self, input_bam_filename, output_bam_filename):
-        self._input_bam_filename = input_bam_filename
-        output_dir = os.path.dirname(output_bam_filename)
-        output_basename = "tmp_unsorted_" \
-                + os.path.basename(output_bam_filename)
-        self._tmp_bam_filename = os.path.join(output_dir, output_basename)
-        self._output_bam_filename = output_bam_filename
-        self._bamfile = None
-
-    def begin(self):
-        #pylint: disable=no-member
-        input_bam = None
-        try:
-            input_bam = pysam.AlignmentFile(self._input_bam_filename, "rb")
-            self._bamfile = pysam.AlignmentFile(self._tmp_bam_filename,
-                                                "wb",
-                                                template=input_bam)
-        finally:
-            if input_bam:
-                input_bam.close()
-
-    def handle(self, read):
-        self._bamfile.write(read.aligned_segment)
-
-    def end(self):
-        self._bamfile.close()
-        self._bamfile = None
-        output_root = os.path.splitext(self._output_bam_filename)[0]
-        _log("Sorting BAM")
-        PYSAM_SORT(self._tmp_bam_filename, output_root)
-        _log("Indexing BAM")
-        PYSAM_INDEX(self._output_bam_filename)
-        os.remove(self._tmp_bam_filename)
-
-
-class _TransformReadHandler(_ReadHandler):
-    '''Updates reference_start and cigar string.'''
-    def __init__(self, read_transformations):
-        self._read_transformations = read_transformations
-
-    def handle(self, read):
-        (dummy,
-         new_reference_start,
-         new_cigar_string) = self._read_transformations[read.key]
-        read.reference_start = new_reference_start
-        read.cigarstring = new_cigar_string
-
-
-class _AddTagsReadHandler(_ReadHandler):
-    '''Adds original read values and other explanatory tags.'''
-    def __init__(self, read_transformations):
-        self._read_transformations = read_transformations
-
-    def handle(self, read):
-        primer_pair = self._read_transformations[read.key][0]
-        read.set_tag("X0", primer_pair.target_id, "Z")
-        read.set_tag("X1", read.cigarstring, "Z")
-        read.set_tag("X2", read.reference_start, "i")
-        read.set_tag("X3", read.reference_end, "i")
+def _build_read_transformations(read_iter):
+    read_transformations = {}
+    read_count = 0
+    for read in read_iter:
+        primer_pair = _PrimerPair.get_primer_pair(read)
+        old_cigar = cigar.cigar_factory(read)
+        new_cigar = primer_pair.softclip_primers(old_cigar)
+        read_transformations[read.key] = (primer_pair,
+                                          new_cigar.reference_start,
+                                          new_cigar.cigar)
+        read_count += 1
+    _log("Read [{}] alignments", read_count)
+    return read_transformations
 
 
 #TODO: Capture mapped pairs for each primer
@@ -287,56 +255,6 @@ class _PrimerStatsDumper():
             self._log_method(stat_format.format(*stats))
 
 
-class _StatsHandler(_ReadHandler):
-    '''Processes reads and primers connecting PrimerStats and
-    PrimerStatsDumper'''
-    def __init__(self, read_transformations, primer_stats, primer_stats_dumper):
-        self._read_transformations = read_transformations
-        self._primer_stats = primer_stats
-        self._primer_stats_dumper = primer_stats_dumper
-
-    def handle(self, read):
-        primer_pair = self._read_transformations[read.key][0]
-        self._primer_stats.add_read_primer(read, primer_pair)
-
-    def end(self):
-        self._primer_stats_dumper.dump(self._primer_stats)
-
-
-def _build_read_transformations(read_iter):
-    read_transformations = {}
-    read_count = 0
-    for read in read_iter:
-        primer_pair = _PrimerPair.get_primer_pair(read)
-        old_cigar = cigar.cigar_factory(read)
-        new_cigar = primer_pair.softclip_primers(old_cigar)
-        read_transformations[read.key] = (primer_pair,
-                                          new_cigar.reference_start,
-                                          new_cigar.cigar)
-        read_count += 1
-    _log("Read [{}] alignments", read_count)
-    return read_transformations
-
-def _handle_reads(read_iter, read_handlers):
-    for handler in read_handlers:
-        handler.begin()
-    for read in read_iter:
-        for handler in read_handlers:
-            handler.handle(read)
-    for handler in read_handlers:
-        handler.end()
-
-def _initialize_primer_pairs(base_reader):
-    dict_reader = csv.DictReader(base_reader, delimiter='\t')
-    for row in dict_reader:
-        sense_start = int(row["Sense Start"]) - 1
-        sense_end = sense_start + len(row["Sense Sequence"])
-        antisense_start = int(row["Antisense Start"])
-        antisense_end = antisense_start - len(row["Antisense Sequence"])
-        _PrimerPair(row["Customer TargetID"],
-                   "chr" + row["Chr"],  #TODO: this prefix seems hackish?
-                   (sense_start, sense_end),
-                   (antisense_end, antisense_start))
 
 #TODO: test
 #TODO: guard if input bam missing index
@@ -371,12 +289,14 @@ def main(command_line_args=None):
         read_transformations = _build_read_transformations(read_iter)
 
         _log("Writing transformed alignments to [{}]", output_bam_filename)
-        handlers = [_StatsHandler(read_transformations,
-                                  _PrimerStats(),
-                                  _PrimerStatsDumper(log_method=_log)),
-                    _AddTagsReadHandler(read_transformations),
-                    _TransformReadHandler(read_transformations),
-                    _WriteReadHandler(input_bam_filename, output_bam_filename),]
+        handlers = [readhandler._StatsHandler(read_transformations,
+                                              _PrimerStats(),
+                                              _PrimerStatsDumper(log_method=_log)),
+                    readhandler._AddTagsReadHandler(read_transformations),
+                    readhandler._TransformReadHandler(read_transformations),
+                    readhandler._WriteReadHandler(input_bam_filename,
+                                                  output_bam_filename,
+                                                  log_method=_log),]
         aligned_segment_iter = input_bamfile.fetch()
         read_iter = _Read.iter(aligned_segment_iter)
         _handle_reads(read_iter, handlers)

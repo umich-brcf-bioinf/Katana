@@ -1,10 +1,6 @@
 #pylint: disable=invalid-name, too-few-public-methods, too-many-public-methods
-
 from __future__ import print_function, absolute_import
 from ampliconsoftclipper import clipper
-import os.path
-import pysam
-from testfixtures.tempdirectory import TempDirectory
 import unittest
 import sys
 try:
@@ -26,17 +22,11 @@ class ClipperBaseTestCase(unittest.TestCase):
         sys.stderr = self.saved_stderr
         unittest.TestCase.tearDown(self)
 
+
 class MicroMock(object):
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
-class MockPrimerStatsDumper(MicroMock):
-    def __init__(self, **kwargs):
-        self._dump_calls=[]
-        super(MockPrimerStatsDumper, self).__init__(**kwargs)
-
-    def dump(self, primer_stats):
-        self._dump_calls.append(primer_stats)
 
 class MockLog(object):
     def __init__(self):
@@ -45,13 +35,6 @@ class MockLog(object):
     def log(self, msg_format, *args):
         self._log_calls.append((msg_format, args))
 
-class MockPrimerStats(MicroMock):
-    def __init__(self, **kwargs):
-        self._add_read_primer_calls=[]
-        super(MockPrimerStats, self).__init__(**kwargs)
-
-    def add_read_primer(self, read, primer):
-        self._add_read_primer_calls.append((read, primer))
 
 class MockRead(MicroMock):
     def __init__(self, **kwargs):
@@ -112,13 +95,6 @@ class MockPrimerPair(MicroMock):
         self._softclip_primers_calls.append(old_cigar)
         return self._softclip_primers_return
 
-
-class MockWriter(object):
-    def __init__(self):
-        self._write_calls = []
-
-    def write(self, obj):
-        self._write_calls.append(obj)
 
 class ClipperTestCase(ClipperBaseTestCase):
     def test_build_read_transformations(self):
@@ -192,36 +168,6 @@ class ClipperTestCase(ClipperBaseTestCase):
         targets = set([primer.target_id for primer in actual_primers.values()])
         self.assertEquals(set(["IDH1_1", "NRAS_3"]), targets)
 
-class AddTagsReadHandlerTestCase(ClipperBaseTestCase):
-    def test_handle(self):
-        #pylint: disable=no-member,too-many-arguments
-        original_reference_start = 100
-        original_reference_end = 110
-        original_cigar_string = "10M"
-        read = MockRead(key=42,
-                        reference_start=original_reference_start,
-                        reference_end=original_reference_end,
-                        cigarstring=original_cigar_string)
-        primer_pair_target = "target_1"
-        primer_pair = MockPrimerPair(target_id=primer_pair_target)
-
-        new_reference_start = 102
-        new_cigar_string = "2S8M"
-        transformations = {42: (primer_pair,
-                                new_reference_start,
-                                new_cigar_string)}
-        handler = clipper._AddTagsReadHandler(transformations)
-
-        handler.handle(read)
-
-        self.assertEquals("X0:Z:" + primer_pair_target,
-                          read._tags["X0"])
-        self.assertEquals("X1:Z:" + original_cigar_string,
-                          read._tags["X1"])
-        self.assertEquals("X2:i:" + str(original_reference_start),
-                          read._tags["X2"])
-        self.assertEquals("X3:i:" + str(original_reference_end),
-                          read._tags["X3"])
 
 class PrimerStatsTestCase(ClipperBaseTestCase):
     def test_stat_keys(self):
@@ -333,124 +279,6 @@ class PrimerStatsDumperTestCase(ClipperBaseTestCase):
         self.assertEquals('PRIMER_STATS|A2|B2', mock_log._log_calls[2][0])
 
 
-class StatsReadHandlerTestCase(ClipperBaseTestCase):
-    def test_handle(self):
-        read1 = MockRead(key=42, is_positive_strand=True)
-        read2 = MockRead(key=42, is_positive_strand=True)
-        primer_pair = MockPrimerPair(target_id="target_1",
-                                     chrom="chr1",
-                                     sense_start=242)
-        new_reference_start = 102
-        new_cigar_string = "2S8M"
-        transformations = {42: (primer_pair,
-                                new_reference_start,
-                                new_cigar_string)}
-        mock_primer_stats = MockPrimerStats()
-        mock_primer_stats_dumper = MockPrimerStatsDumper()
-        handler = clipper._StatsHandler(transformations,
-                                               mock_primer_stats,
-                                               mock_primer_stats_dumper)
-
-        handler.handle(read1)
-        handler.handle(read2)
-        expected_calls = [(read1, primer_pair), (read2, primer_pair)]
-        self.assertEquals(expected_calls,
-                          mock_primer_stats._add_read_primer_calls)
-
-        handler.end()
-        self.assertEquals([mock_primer_stats],
-                          mock_primer_stats_dumper._dump_calls)
-
-
-class TransformReadHandlerTestCase(ClipperBaseTestCase):
-    def test_handle(self):
-        #pylint: disable=no-member,too-many-arguments
-        read = MockRead(key=42, reference_start=100, cigarstring="10M")
-        primer_pair = None
-        new_reference_start = 102
-        new_cigar_string = "2S8M"
-        transformations = {42: (primer_pair,
-                                new_reference_start,
-                                new_cigar_string)}
-        handler = clipper._TransformReadHandler(transformations)
-        handler.handle(read)
-        self.assertEquals(102, read.reference_start)
-        self.assertEquals("2S8M", read.cigarstring)
-
-class WriteReadHandlerTestCase(ClipperBaseTestCase):
-    #pylint: disable=no-member,too-many-arguments
-    @staticmethod
-    def make_bam_file(filename, reads, header=None):
-        if header is None:
-            header = { 'HD': {'VN': '1.0'},
-                      'SQ': [{'LN': 1575, 'SN': 'chr1'},
-                             {'LN': 1584, 'SN': 'chr2'}] }
-        outfile = pysam.AlignmentFile(filename, "wb", header=header)
-        for read in reads:
-            outfile.write(read.aligned_segment)
-        outfile.close()
-        clipper.PYSAM_INDEX(filename)
-
-    @staticmethod
-    def build_read(query_name = "read_28833_29006_6945",
-                   query_sequence="AGCTTAGCTA",
-                   flag = 99,
-                   reference_id = 0,
-                   reference_start = 32,
-                   mapping_quality = 20,
-                   cigar = None,
-                   next_reference_id = 0,
-                   next_reference_start=199,
-                   template_length=167,
-                   query_qualities = None,
-                   tags = None):
-        a = pysam.AlignedSegment()
-        a.query_name = query_name
-        a.query_sequence = query_sequence
-        a.flag = flag
-        a.reference_id = reference_id
-        a.reference_start = reference_start
-        a.mapping_quality = mapping_quality
-        if cigar is None:
-            a.cigar = ((0,10), (2,1), (0,25))
-        a.next_reference_id = next_reference_id
-        a.next_reference_start = next_reference_start
-        a.template_length = template_length
-        if query_qualities is None:
-            a.query_qualities = pysam.qualitystring_to_array("<<<<<<<<<<")
-        if tags is None:
-            a.tags = (("NM", 1),
-                      ("RG", "L1"))
-        return clipper._Read(a)
-
-    def test_handle_sortsAndIndexes(self):
-        with TempDirectory() as input_dir, TempDirectory() as output_dir:
-            input_bam_filename = os.path.join(input_dir.path, "input.bam")
-            self.make_bam_file(input_bam_filename, [self.build_read()])
-            output_bam_filename = os.path.join(output_dir.path, "output.bam")
-            handler = clipper._WriteReadHandler(input_bam_filename,
-                                               output_bam_filename)
-            read1 = self.build_read(query_name="read1",
-                                    reference_id=0,
-                                    reference_start=20)
-            read2 = self.build_read(query_name="read2",
-                                    reference_id=0,
-                                    reference_start=10)
-
-            handler.begin()
-            handler.handle(read1)
-            handler.handle(read2)
-            handler.end()
-
-            actual_files = sorted(os.listdir(output_dir.path))
-            self.assertEquals(["output.bam", "output.bam.bai"], actual_files)
-            actual_bam = pysam.AlignmentFile(output_bam_filename, "rb")
-            actual_reads = [read for read in actual_bam.fetch()]
-            actual_bam.close()
-
-        self.assertEquals(2, len(actual_reads))
-        self.assertEquals("read2", actual_reads[0].query_name)
-        self.assertEquals("read1", actual_reads[1].query_name)
 
 class ReadTestCase(ClipperBaseTestCase):
     def test_init(self):
