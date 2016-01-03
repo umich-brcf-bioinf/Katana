@@ -1,4 +1,4 @@
-"""Softclips primers at edge of aligned reads"""
+"""Various classes that handle reads"""
 #TODO: elaborate module doc
 from __future__ import print_function, absolute_import, division
 
@@ -16,12 +16,49 @@ PYSAM_SORT = pysam.SamtoolsDispatcher("sort", None).__call__
 class _BaseReadHandler(object):
     def begin(self):
         pass
-    def handle(self, read):
+    def handle(self, read, read_transformation):
         pass
     def end(self):
         pass
 
 
+class _AddTagsReadHandler(_BaseReadHandler):
+    '''Adds original read values and other explanatory tags.'''
+    def handle(self, read, read_transformation):
+        primer_pair = read_transformation[0]
+        read.set_tag("X0", primer_pair.target_id, "Z")
+        read.set_tag("X1", read.cigarstring, "Z")
+        read.set_tag("X2", read.reference_start, "i")
+        read.set_tag("X3", read.reference_end, "i")
+
+
+class _StatsHandler(_BaseReadHandler):
+    '''Processes reads and primers connecting PrimerStats and
+    PrimerStatsDumper'''
+    def __init__(self, primer_stats, primer_stats_dumper):
+        self._primer_stats = primer_stats
+        self._primer_stats_dumper = primer_stats_dumper
+
+    def handle(self, read, read_transformation):
+        primer_pair = read_transformation[0]
+        self._primer_stats.add_read_primer(read, primer_pair)
+
+    def end(self):
+        self._primer_stats_dumper.dump(self._primer_stats)
+
+
+#TODO: extend to adjust mate start or unmap mate if mate unmatched
+class _TransformReadHandler(_BaseReadHandler):
+    '''Updates reference_start and cigar string.'''
+    def handle(self, read, read_transformation):
+        (dummy,
+         new_reference_start,
+         new_cigar_string) = read_transformation
+        read.reference_start = new_reference_start
+        read.cigarstring = new_cigar_string
+
+
+#TODO: allow suppress/divert unmatched reads
 #TODO: Add PG and CO header lines for tags
 class _WriteReadHandler(_BaseReadHandler):
     '''Writes reads to a BAM file (ultimately sorting and indexing the BAM).'''
@@ -50,7 +87,7 @@ class _WriteReadHandler(_BaseReadHandler):
             if input_bam:
                 input_bam.close()
 
-    def handle(self, read):
+    def handle(self, read, read_transformation):
         self._bamfile.write(read.aligned_segment)
 
     def end(self):
@@ -63,71 +100,3 @@ class _WriteReadHandler(_BaseReadHandler):
         PYSAM_INDEX(self._output_bam_filename)
         os.remove(self._tmp_bam_filename)
 
-
-class _TransformReadHandler(_BaseReadHandler):
-    '''Updates reference_start and cigar string.'''
-    def __init__(self, read_transformations):
-        self._read_transformations = read_transformations
-
-    def handle(self, read):
-        (dummy,
-         new_reference_start,
-         new_cigar_string) = self._read_transformations[read.key]
-        read.reference_start = new_reference_start
-        read.cigarstring = new_cigar_string
-
-
-class _AddTagsReadHandler(_BaseReadHandler):
-    '''Adds original read values and other explanatory tags.'''
-    def __init__(self, read_transformations):
-        self._read_transformations = read_transformations
-
-    def handle(self, read):
-        primer_pair = self._read_transformations[read.key][0]
-        read.set_tag("X0", primer_pair.target_id, "Z")
-        read.set_tag("X1", read.cigarstring, "Z")
-        read.set_tag("X2", read.reference_start, "i")
-        read.set_tag("X3", read.reference_end, "i")
-
-
-#TODO: test
-class _UnmatchedPrimerHandler(_BaseReadHandler):
-    '''Optionally excludes unmatched primers.'''
-    def __init__(self, read_transformations,
-                 suppress_unmatched_primer=False,
-                 log_method=None):
-        self._read_transformations = read_transformations
-        self._suppress_unmatched_primer = suppress_unmatched_primer
-        self._unmatched_count = 0
-        self._log = log_method
-
-    def handle(self, read):
-        primer_pair = self._read_transformations[read.key][0]
-        if primer_pair.is_unmatched():
-            self._unmatched_count += 1
-            if self._suppress_unmatched_primer:
-                raise StopIteration()
-
-    def end(self):
-        if self._suppress_unmatched_primer:
-            msg = "excluded from"
-        else:
-            msg = "preserved in"
-        self._log("[{}] reads did not match primers and were {} output",
-                  self._unmatched_count,
-                  msg)
-
-class _StatsHandler(_BaseReadHandler):
-    '''Processes reads and primers connecting PrimerStats and
-    PrimerStatsDumper'''
-    def __init__(self, read_transformations, primer_stats, primer_stats_dumper):
-        self._read_transformations = read_transformations
-        self._primer_stats = primer_stats
-        self._primer_stats_dumper = primer_stats_dumper
-
-    def handle(self, read):
-        primer_pair = self._read_transformations[read.key][0]
-        self._primer_stats.add_read_primer(read, primer_pair)
-
-    def end(self):
-        self._primer_stats_dumper.dump(self._primer_stats)

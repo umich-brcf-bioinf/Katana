@@ -33,6 +33,60 @@ def _log(msg_format, *args):
     sys.stderr.flush()
 
 
+#TODO: Capture mapped pairs for each primer
+#TODO: Capture overall mapped pairs
+#TODO: Capture unmatched primers
+class _PrimerStats(object):
+    '''Collects simple counts for overall reads and reads per primer.'''
+    STAT_KEYS = ["chrom", "target_id", "sense_start", "sense_count",
+                 "antisense_count", "sense_percent", "antisense_percent"]
+    def __init__(self):
+        self.total_read_count = 0
+        self._primer_stats = defaultdict(int)
+
+
+    def _percent(self, primer, is_sense):
+        read_count = self._primer_stats[primer, is_sense]
+        return int(100 * read_count / self.total_read_count)
+
+    def add_read_primer(self, read, primer_pair):
+        self.total_read_count +=1
+        stat_key = (primer_pair, read.is_positive_strand)
+        self._primer_stats[stat_key] += 1
+
+    @property
+    def primer_pairs(self):
+        sort_key = lambda x:(x.chrom, x.sense_start, x.target_id)
+        primers = set([primer for (primer, _) in self._primer_stats])
+        return natsort.natsorted(primers, key=sort_key)
+
+    def stats(self, primer_pair):
+        values = [primer_pair.chrom,
+                  primer_pair.target_id,
+                  primer_pair.sense_start,
+                  self._primer_stats[primer_pair, True],
+                  self._primer_stats[primer_pair, False],
+                  self._percent(primer_pair, True),
+                  self._percent(primer_pair, False)]
+        return dict(itertools.izip(_PrimerStats.STAT_KEYS, values))
+
+
+#TODO: Extend log method to emit subset to screen and full set to file
+class _PrimerStatsDumper():
+    '''Prints PrimerStats object to log.'''
+    def __init__(self, log_method=_log):
+        self._log_method = log_method
+
+    def dump(self, primer_stats):
+        # pylint: disable=star-args
+        stat_format = "PRIMER_STATS" + "|{}" * len(primer_stats.STAT_KEYS)
+        self._log_method(stat_format.format(*primer_stats.STAT_KEYS))
+        for primer_pair in primer_stats.primer_pairs:
+            stat_dict = primer_stats.stats(primer_pair)
+            stats = [stat_dict[key] for key in primer_stats.STAT_KEYS]
+            self._log_method(stat_format.format(*stats))
+
+
 class _Read(object):
     '''Lightweight wrapper around AlignedSegment'''
     def __init__(self, aligned_segment):
@@ -164,13 +218,27 @@ class _PrimerPair(object):
         return old_cigar.softclip_target(self._query_region_start,
                                          self._query_region_end)
 
+def _build_read_transformations(read_iter):
+    read_transformations = {}
+    read_count = 0
+    for read in read_iter:
+        primer_pair = _PrimerPair.get_primer_pair(read)
+        old_cigar = cigar.cigar_factory(read)
+        new_cigar = primer_pair.softclip_primers(old_cigar)
+        read_transformations[read.key] = (primer_pair,
+                                          new_cigar.reference_start,
+                                          new_cigar.cigar)
+        read_count += 1
+    _log("Read [{}] alignments", read_count)
+    return read_transformations
 
-def _handle_reads(read_iter, read_handlers):
+def _handle_reads(read_handlers, read_iter, read_transformations):
     for handler in read_handlers:
         handler.begin()
     for read in read_iter:
+        read_transformation = read_transformations[read.key]
         for handler in read_handlers:
-            handler.handle(read)
+            handler.handle(read, read_transformation)
     for handler in read_handlers:
         handler.end()
 
@@ -186,82 +254,11 @@ def _initialize_primer_pairs(base_reader):
                    (sense_start, sense_end),
                    (antisense_end, antisense_start))
 
-def _build_read_transformations(read_iter):
-    read_transformations = {}
-    read_count = 0
-    for read in read_iter:
-        primer_pair = _PrimerPair.get_primer_pair(read)
-        old_cigar = cigar.cigar_factory(read)
-        new_cigar = primer_pair.softclip_primers(old_cigar)
-        read_transformations[read.key] = (primer_pair,
-                                          new_cigar.reference_start,
-                                          new_cigar.cigar)
-        read_count += 1
-    _log("Read [{}] alignments", read_count)
-    return read_transformations
-
-
-#TODO: Capture mapped pairs for each primer
-#TODO: Capture overall mapped pairs
-#TODO: Capture unmatched primers
-class _PrimerStats(object):
-    '''Collects simple counts for overall reads and reads per primer.'''
-    STAT_KEYS = ["chrom", "target_id", "sense_start", "sense_count",
-                 "antisense_count", "sense_percent", "antisense_percent"]
-    def __init__(self):
-        self.total_read_count = 0
-        self._primer_stats = defaultdict(int)
-
-
-    def _percent(self, primer, is_sense):
-        read_count = self._primer_stats[primer, is_sense]
-        return int(100 * read_count / self.total_read_count)
-
-    def add_read_primer(self, read, primer_pair):
-        self.total_read_count +=1
-        stat_key = (primer_pair, read.is_positive_strand)
-        self._primer_stats[stat_key] += 1
-
-    @property
-    def primer_pairs(self):
-        sort_key = lambda x:(x.chrom, x.sense_start, x.target_id)
-        primers = set([primer for (primer, _) in self._primer_stats])
-        return natsort.natsorted(primers, key=sort_key)
-
-    def stats(self, primer_pair):
-        values = [primer_pair.chrom,
-                  primer_pair.target_id,
-                  primer_pair.sense_start,
-                  self._primer_stats[primer_pair, True],
-                  self._primer_stats[primer_pair, False],
-                  self._percent(primer_pair, True),
-                  self._percent(primer_pair, False)]
-        return dict(itertools.izip(_PrimerStats.STAT_KEYS, values))
-
-
-#TODO: Extend log method to emit subset to screen and full set to file
-class _PrimerStatsDumper():
-    '''Prints PrimerStats object to log.'''
-    def __init__(self, log_method=_log):
-        self._log_method = log_method
-
-    def dump(self, primer_stats):
-        # pylint: disable=star-args
-        stat_format = "PRIMER_STATS" + "|{}" * len(primer_stats.STAT_KEYS)
-        self._log_method(stat_format.format(*primer_stats.STAT_KEYS))
-        for primer_pair in primer_stats.primer_pairs:
-            stat_dict = primer_stats.stats(primer_pair)
-            stats = [stat_dict[key] for key in primer_stats.STAT_KEYS]
-            self._log_method(stat_format.format(*stats))
-
-
-
 #TODO: test
-#TODO: guard if input bam missing index
-#TODO: guard if input bam regions disjoint with primer regions
-#TODO: guard if less than 5% reads transformed
+#TODO: deal if input bam missing index
+#TODO: deal if input bam regions disjoint with primer regions
+#TODO: warn/stop if less than 5% reads transformed
 #TODO: argparse
-#TODO: allow suppress/divert unmatched reads
 def main(command_line_args=None):
 
     if not command_line_args:
@@ -289,17 +286,16 @@ def main(command_line_args=None):
         read_transformations = _build_read_transformations(read_iter)
 
         _log("Writing transformed alignments to [{}]", output_bam_filename)
-        handlers = [readhandler._StatsHandler(read_transformations,
-                                              _PrimerStats(),
+        handlers = [readhandler._StatsHandler(_PrimerStats(),
                                               _PrimerStatsDumper(log_method=_log)),
-                    readhandler._AddTagsReadHandler(read_transformations),
-                    readhandler._TransformReadHandler(read_transformations),
+                    readhandler._AddTagsReadHandler(),
+                    readhandler._TransformReadHandler(),
                     readhandler._WriteReadHandler(input_bam_filename,
                                                   output_bam_filename,
                                                   log_method=_log),]
         aligned_segment_iter = input_bamfile.fetch()
         read_iter = _Read.iter(aligned_segment_iter)
-        _handle_reads(read_iter, handlers)
+        _handle_reads(handlers, read_iter, read_transformations)
     except Exception: #pylint: disable=broad-except
         _log("ERROR: An unexpected error occurred")
         _log(traceback.format_exc())

@@ -62,8 +62,6 @@ class MockRead(MicroMock):
         self._tags[tag_name] = "{}:{}:{}".format(tag_name, tag_type, tag_value)
 
 
-
-
 class MockPrimerPair(MicroMock):
     def __init__(self, **kwargs):
         self._softclip_primers_calls=[]
@@ -80,12 +78,11 @@ class MockPrimerPair(MicroMock):
 
 class AddTagsReadHandlerTestCase(ReadHandlerBaseTestCase):
     def test_handle(self):
-        #pylint: disable=no-member,too-many-arguments
+        #pylint: disable=no-member
         original_reference_start = 100
         original_reference_end = 110
         original_cigar_string = "10M"
-        read = MockRead(key=42,
-                        reference_start=original_reference_start,
+        read = MockRead(reference_start=original_reference_start,
                         reference_end=original_reference_end,
                         cigarstring=original_cigar_string)
         primer_pair_target = "target_1"
@@ -93,12 +90,12 @@ class AddTagsReadHandlerTestCase(ReadHandlerBaseTestCase):
 
         new_reference_start = 102
         new_cigar_string = "2S8M"
-        transformations = {42: (primer_pair,
-                                new_reference_start,
-                                new_cigar_string)}
-        handler = readhandler._AddTagsReadHandler(transformations)
+        transformation = (primer_pair,
+                          new_reference_start,
+                          new_cigar_string)
+        handler = readhandler._AddTagsReadHandler()
 
-        handler.handle(read)
+        handler.handle(read, transformation)
 
         self.assertEquals("X0:Z:" + primer_pair_target,
                           read._tags["X0"])
@@ -113,24 +110,23 @@ class AddTagsReadHandlerTestCase(ReadHandlerBaseTestCase):
 
 class StatsReadHandlerTestCase(ReadHandlerBaseTestCase):
     def test_handle(self):
-        read1 = MockRead(key=42, is_positive_strand=True)
-        read2 = MockRead(key=42, is_positive_strand=True)
+        read1 = MockRead(is_positive_strand=True)
+        read2 = MockRead(is_positive_strand=True)
         primer_pair = MockPrimerPair(target_id="target_1",
                                      chrom="chr1",
                                      sense_start=242)
         new_reference_start = 102
         new_cigar_string = "2S8M"
-        transformations = {42: (primer_pair,
-                                new_reference_start,
-                                new_cigar_string)}
+        transformation = (primer_pair,
+                          new_reference_start,
+                          new_cigar_string)
         mock_primer_stats = MockPrimerStats()
         mock_primer_stats_dumper = MockPrimerStatsDumper()
-        handler = readhandler._StatsHandler(transformations,
-                                            mock_primer_stats,
+        handler = readhandler._StatsHandler(mock_primer_stats,
                                             mock_primer_stats_dumper)
 
-        handler.handle(read1)
-        handler.handle(read2)
+        handler.handle(read1, transformation)
+        handler.handle(read2, transformation)
         expected_calls = [(read1, primer_pair), (read2, primer_pair)]
         self.assertEquals(expected_calls,
                           mock_primer_stats._add_read_primer_calls)
@@ -142,16 +138,16 @@ class StatsReadHandlerTestCase(ReadHandlerBaseTestCase):
 
 class TransformReadHandlerTestCase(ReadHandlerBaseTestCase):
     def test_handle(self):
-        #pylint: disable=no-member,too-many-arguments
-        read = MockRead(key=42, reference_start=100, cigarstring="10M")
+        #pylint: disable=no-member
+        read = MockRead(reference_start=100, cigarstring="10M")
         primer_pair = None
         new_reference_start = 102
         new_cigar_string = "2S8M"
-        transformations = {42: (primer_pair,
-                                new_reference_start,
-                                new_cigar_string)}
-        handler = readhandler._TransformReadHandler(transformations)
-        handler.handle(read)
+        transformation = (primer_pair,
+                          new_reference_start,
+                          new_cigar_string)
+        handler = readhandler._TransformReadHandler()
+        handler.handle(read, transformation)
         self.assertEquals(102, read.reference_start)
         self.assertEquals("2S8M", read.cigarstring)
 
@@ -218,8 +214,8 @@ class WriteReadHandlerTestCase(ReadHandlerBaseTestCase):
                                     reference_start=10)
 
             handler.begin()
-            handler.handle(read1)
-            handler.handle(read2)
+            handler.handle(read1, ())
+            handler.handle(read2, ())
             handler.end()
 
             actual_files = sorted(os.listdir(output_dir.path))

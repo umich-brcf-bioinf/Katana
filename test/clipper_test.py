@@ -75,8 +75,8 @@ class MockReadHandler(MicroMock):
     def begin(self):
         self.begin_calls += 1
 
-    def handle(self, read):
-        self.handle_calls.append(read)
+    def handle(self, read, read_transformation):
+        self.handle_calls.append((read, read_transformation))
 
     def end(self):
         self.end_calls += 1
@@ -139,17 +139,26 @@ class ClipperTestCase(ClipperBaseTestCase):
         handler2 = MockReadHandler()
         handler3 = MockReadHandler()
         handlers = [handler1, handler2, handler3]
-        read1 = MockRead(query_name="read1-sense")
-        read2 = MockRead(query_name="read2-antisense")
-        read3 = MockRead(query_name="read3")
+        read1 = MockRead(key=1)
+        read2 = MockRead(key=2)
+        read3 = MockRead(key=3)
+        transform1 = ()
+        transform2 = ()
+        transform3 = ()
+
+        read_transformations = {1: transform1, 2: transform2, 3:transform3}
         read_iter = iter([read1, read2, read3])
-        clipper._handle_reads(read_iter, handlers)
+        clipper._handle_reads(handlers, read_iter, read_transformations)
         self.assertEquals(1, handler1.begin_calls)
         self.assertEquals(1, handler2.begin_calls)
         self.assertEquals(1, handler3.begin_calls)
-        self.assertEquals([read1, read2, read3], handler1.handle_calls)
-        self.assertEquals([read1, read2, read3], handler2.handle_calls)
-        self.assertEquals([read1, read2, read3], handler3.handle_calls)
+
+        expected_calls = [(read1, transform1),
+                          (read2, transform2),
+                          (read3, transform3)]
+        self.assertEquals(expected_calls, handler1.handle_calls)
+        self.assertEquals(expected_calls, handler2.handle_calls)
+        self.assertEquals(expected_calls, handler3.handle_calls)
         self.assertEquals(1, handler1.end_calls)
         self.assertEquals(1, handler2.end_calls)
         self.assertEquals(1, handler3.end_calls)
