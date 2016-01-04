@@ -22,7 +22,7 @@ class _BaseReadHandler(object):
         pass
 
 
-class _AddTagsReadHandler(_BaseReadHandler):
+class AddTagsReadHandler(_BaseReadHandler):
     '''Adds original read values and other explanatory tags.'''
     def handle(self, read, read_transformation, mate_transformation):
         primer_pair = read_transformation[0]
@@ -31,7 +31,7 @@ class _AddTagsReadHandler(_BaseReadHandler):
         read.set_tag("X2", read.reference_start, "i")
         read.set_tag("X3", read.reference_end, "i")
 
-class _ExcludeNonMatchedReadHandler(_BaseReadHandler):
+class ExcludeNonMatchedReadHandler(_BaseReadHandler):
     '''Excludes reads from further processing'''
     STOP_ITERATION_EXCEPTION = StopIteration()
     def __init__(self, log_method):
@@ -58,7 +58,7 @@ class _ExcludeNonMatchedReadHandler(_BaseReadHandler):
                "did not match a primer")
         self._log_method(msg, self._broken_pair_count)
 
-class _StatsHandler(_BaseReadHandler):
+class StatsHandler(_BaseReadHandler):
     '''Processes reads and primers connecting PrimerStats and
     PrimerStatsDumper'''
     def __init__(self, primer_stats, primer_stats_dumper):
@@ -73,7 +73,7 @@ class _StatsHandler(_BaseReadHandler):
         self._primer_stats_dumper.dump(self._primer_stats)
 
 
-class _TransformReadHandler(_BaseReadHandler):
+class TransformReadHandler(_BaseReadHandler):
     '''Updates reference_start, cigar string, and mate_reference_start.'''
     def handle(self, read, read_transformation, mate_transformation):
         (new_reference_start, new_cigar_string) = read_transformation[1:]
@@ -85,7 +85,7 @@ class _TransformReadHandler(_BaseReadHandler):
 
 
 #TODO: Add PG and CO header lines for tags
-class _WriteReadHandler(_BaseReadHandler):
+class WriteReadHandler(_BaseReadHandler):
     '''Writes reads to a BAM file (ultimately sorting and indexing the BAM).'''
     def __init__(self,
                  input_bam_filename,

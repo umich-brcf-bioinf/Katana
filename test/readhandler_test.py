@@ -4,29 +4,9 @@ from ampliconsoftclipper import readhandler
 import os.path
 import pysam
 from testfixtures.tempdirectory import TempDirectory
-import unittest
-import sys
-try:
-    from StringIO import StringIO
-except ImportError:
-    from io import StringIO
+from test.util_test import ClipperBaseTestCase, MicroMock, MockRead,\
+        MockPrimerPair, MockLog
 
-
-class ReadHandlerBaseTestCase(unittest.TestCase):
-    def setUp(self):
-        unittest.TestCase.setUp(self)
-        self.stderr = StringIO()
-        self.saved_stderr = sys.stderr
-        sys.stderr = self.stderr
-
-    def tearDown(self):
-        self.stderr.close()
-        sys.stderr = self.saved_stderr
-        unittest.TestCase.tearDown(self)
-
-class MicroMock(object):
-    def __init__(self, **kwargs):
-        self.__dict__.update(kwargs)
 
 class MockPrimerStatsDumper(MicroMock):
     def __init__(self, **kwargs):
@@ -35,13 +15,6 @@ class MockPrimerStatsDumper(MicroMock):
 
     def dump(self, primer_stats):
         self._dump_calls.append(primer_stats)
-
-class MockLog(object):
-    def __init__(self):
-        self._log_calls = []
-
-    def log(self, msg_format, *args):
-        self._log_calls.append((msg_format, args))
 
 
 class MockPrimerStats(MicroMock):
@@ -53,30 +26,7 @@ class MockPrimerStats(MicroMock):
         self._add_read_primer_calls.append((read, primer))
 
 
-class MockRead(MicroMock):
-    def __init__(self, **kwargs):
-        self._tags={}
-        super(MockRead, self).__init__(**kwargs)
-
-    def set_tag(self, tag_name, tag_value, tag_type):
-        self._tags[tag_name] = "{}:{}:{}".format(tag_name, tag_type, tag_value)
-
-
-class MockPrimerPair(MicroMock):
-    def __init__(self, **kwargs):
-        self._softclip_primers_calls=[]
-        self._softclip_primers_return = None
-        super(MockPrimerPair, self).__init__(**kwargs)
-
-    def add_tags(self, read):
-        pass
-
-    def softclip_primers(self, old_cigar):
-        self._softclip_primers_calls.append(old_cigar)
-        return self._softclip_primers_return
-
-
-class AddTagsReadHandlerTestCase(ReadHandlerBaseTestCase):
+class AddTagsReadHandlerTestCase(ClipperBaseTestCase):
     def test_handle(self):
         #pylint: disable=no-member
         original_reference_start = 100
@@ -94,7 +44,7 @@ class AddTagsReadHandlerTestCase(ReadHandlerBaseTestCase):
                           new_reference_start,
                           new_cigar_string)
         mate_transformation = None
-        handler = readhandler._AddTagsReadHandler()
+        handler = readhandler.AddTagsReadHandler()
 
         handler.handle(read, transformation, mate_transformation)
 
@@ -108,7 +58,7 @@ class AddTagsReadHandlerTestCase(ReadHandlerBaseTestCase):
                           read._tags["X3"])
 
 
-class ExcludeReadHandlerTestCase(ReadHandlerBaseTestCase):
+class ExcludeReadHandlerTestCase(ClipperBaseTestCase):
     def test_handle_readAndMateMatchPrimers(self):
         #pylint: disable=no-member
         read = MockRead(mate_is_mapped=True)
@@ -116,7 +66,7 @@ class ExcludeReadHandlerTestCase(ReadHandlerBaseTestCase):
         transformation = (primer_pair, None, None)
         mate_transformation = (primer_pair, None, None)
         mock_log = MockLog()
-        handler = readhandler._ExcludeNonMatchedReadHandler(log_method=mock_log)
+        handler = readhandler.ExcludeNonMatchedReadHandler(log_method=mock_log)
         handler.handle(read, transformation, mate_transformation)
         self.assertEquals(True, read.mate_is_mapped)
 
@@ -127,7 +77,7 @@ class ExcludeReadHandlerTestCase(ReadHandlerBaseTestCase):
         transformation = (primer_pair, None, None)
         mate_transformation = (primer_pair, None, None)
         mock_log = MockLog()
-        handler = readhandler._ExcludeNonMatchedReadHandler(log_method=mock_log)
+        handler = readhandler.ExcludeNonMatchedReadHandler(log_method=mock_log)
         self.assertRaises(StopIteration,
                           handler.handle,
                           read,
@@ -142,12 +92,12 @@ class ExcludeReadHandlerTestCase(ReadHandlerBaseTestCase):
         transformation = (primer_pair, None, None)
         mate_transformation = (mate_primer_pair, None, None)
         mock_log = MockLog()
-        handler = readhandler._ExcludeNonMatchedReadHandler(log_method=mock_log)
+        handler = readhandler.ExcludeNonMatchedReadHandler(log_method=mock_log)
         handler.handle(read, transformation, mate_transformation)
         self.assertEquals(False, read.mate_is_mapped)
 
 
-class StatsReadHandlerTestCase(ReadHandlerBaseTestCase):
+class StatsReadHandlerTestCase(ClipperBaseTestCase):
     def test_handle(self):
         read1 = MockRead(is_positive_strand=True)
         read2 = MockRead(is_positive_strand=True)
@@ -162,7 +112,7 @@ class StatsReadHandlerTestCase(ReadHandlerBaseTestCase):
         mate_transformation = None
         mock_primer_stats = MockPrimerStats()
         mock_primer_stats_dumper = MockPrimerStatsDumper()
-        handler = readhandler._StatsHandler(mock_primer_stats,
+        handler = readhandler.StatsHandler(mock_primer_stats,
                                             mock_primer_stats_dumper)
 
         handler.handle(read1, transformation, mate_transformation)
@@ -176,7 +126,7 @@ class StatsReadHandlerTestCase(ReadHandlerBaseTestCase):
                           mock_primer_stats_dumper._dump_calls)
 
 
-class TransformReadHandlerTestCase(ReadHandlerBaseTestCase):
+class TransformReadHandlerTestCase(ClipperBaseTestCase):
     def test_handle(self):
         #pylint: disable=no-member
         read = MockRead(reference_start=100, cigarstring="10M")
@@ -189,7 +139,7 @@ class TransformReadHandlerTestCase(ReadHandlerBaseTestCase):
         mate_transformation = (MockPrimerPair(is_unmatched=True),
                                0,
                                "")
-        handler = readhandler._TransformReadHandler()
+        handler = readhandler.TransformReadHandler()
         handler.handle(read, transformation, mate_transformation)
         self.assertEquals(102, read.reference_start)
         self.assertEquals("2S8M", read.cigarstring)
@@ -201,7 +151,7 @@ class TransformReadHandlerTestCase(ReadHandlerBaseTestCase):
         mate_transformation = (MockPrimerPair(is_unmatched=False),
                                222,
                                "")
-        handler = readhandler._TransformReadHandler()
+        handler = readhandler.TransformReadHandler()
         handler.handle(read, transformation, mate_transformation)
         self.assertEquals(222, read.mate_reference_start)
 
@@ -212,12 +162,12 @@ class TransformReadHandlerTestCase(ReadHandlerBaseTestCase):
         mate_transformation = (MockPrimerPair(is_unmatched=True),
                                222,
                                "")
-        handler = readhandler._TransformReadHandler()
+        handler = readhandler.TransformReadHandler()
         handler.handle(read, transformation, mate_transformation)
         self.assertEquals(100, read.mate_reference_start)
 
 
-class WriteReadHandlerTestCase(ReadHandlerBaseTestCase):
+class WriteReadHandlerTestCase(ClipperBaseTestCase):
     #pylint: disable=no-member,too-many-arguments
     @staticmethod
     def make_bam_file(filename, reads, header=None):
@@ -269,7 +219,7 @@ class WriteReadHandlerTestCase(ReadHandlerBaseTestCase):
             self.make_bam_file(input_bam_filename, [self.build_read()])
             output_bam_filename = os.path.join(output_dir.path, "output.bam")
             mock_log = MockLog()
-            handler = readhandler._WriteReadHandler(input_bam_filename,
+            handler = readhandler.WriteReadHandler(input_bam_filename,
                                                     output_bam_filename,
                                                     log_method=mock_log.log)
             read1 = self.build_read(query_name="read1",
