@@ -35,7 +35,6 @@ def _log(msg_format, *args):
 #TODO: To avoid circular dependencies, move this and other classes to util module (and reorg Mocks)
 #TODO: Capture mapped pairs for each primer
 #TODO: Capture overall mapped pairs
-#TODO: Capture unmatched primers
 class _PrimerStats(object):
     '''Collects simple counts for overall reads and reads per primer.'''
     STAT_KEYS = ["chrom", "target_id", "sense_start", "sense_count",
@@ -114,6 +113,16 @@ class _Read(object):
                 self.aligned_segment.next_reference_start)
 
     @property
+    def mate_is_mapped(self):
+        return not self.aligned_segment.mate_is_unmapped
+
+    @mate_is_mapped.setter
+    def mate_is_mapped(self, value):
+        self.aligned_segment.mate_is_unmapped = not value
+        if not value:
+            self.aligned_segment.next_reference_start = 0
+
+    @property
     def reference_name(self):
         return self.aligned_segment.reference_name
 
@@ -156,8 +165,9 @@ class _NullPrimerPair(object):
     def softclip_primers(old_cigar):
         return old_cigar
 
-    @staticmethod
-    def is_unmatched():
+    @property
+    def is_unmatched(self):
+        #pylint: disable=no-self-use
         return True
 
 class _PrimerPair(object):
@@ -210,8 +220,9 @@ class _PrimerPair(object):
         except KeyError:
             return _PrimerPair.NULL_PRIMER_PAIR
 
-    @staticmethod
-    def is_unmatched():
+    @property
+    def is_unmatched(self):
+        #pylint: disable=no-self-use
         return False
 
     def softclip_primers(self, old_cigar):
@@ -233,13 +244,16 @@ def _build_read_transformations(read_iter):
     return read_transformations
 
 def _handle_reads(read_handlers, read_iter, read_transformations):
+    null_transformation = (_PrimerPair.NULL_PRIMER_PAIR, 0, "")
     for handler in read_handlers:
         handler.begin()
     for read in read_iter:
         read_transformation = read_transformations[read.key]
+        mate_transformation = read_transformations.get(read.mate_key,
+                                                       null_transformation)
         try:
             for handler in read_handlers:
-                handler.handle(read, read_transformation)
+                handler.handle(read, read_transformation, mate_transformation)
         except StopIteration:
             pass
     for handler in read_handlers:
@@ -274,6 +288,7 @@ def _build_handlers(input_bam_filename,
     return handlers
 
 #TODO: test
+#TODO: allow suppress/divert unmatched reads
 #TODO: deal if input bam missing index
 #TODO: deal if input bam regions disjoint with primer regions
 #TODO: warn/stop if less than 5% reads transformed

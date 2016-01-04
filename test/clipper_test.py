@@ -77,8 +77,10 @@ class MockReadHandler(MicroMock):
     def begin(self):
         self.begin_calls += 1
 
-    def handle(self, read, read_transformation):
-        self.handle_calls.append((read, read_transformation))
+    def handle(self, read, read_transformation, mate_transformation):
+        self.handle_calls.append((read,
+                                  read_transformation,
+                                  mate_transformation))
         if self.handle_raise and self.handle_raise(read, read_transformation):
             raise StopIteration()
 
@@ -166,23 +168,31 @@ class ClipperTestCase(ClipperBaseTestCase):
         handler2 = MockReadHandler()
         handler3 = MockReadHandler()
         handlers = [handler1, handler2, handler3]
-        read1 = MockRead(key=1)
-        read2 = MockRead(key=2)
-        read3 = MockRead(key=3)
+        read1 = MockRead(key=1, mate_key=11)
+        read2 = MockRead(key=2, mate_key=12)
+        read3 = MockRead(key=3, mate_key=13)
         transform1 = ()
+        mate_transform1=()
         transform2 = ()
+        mate_transform2=()
         transform3 = ()
+        mate_transform3=()
 
-        read_transformations = {1: transform1, 2: transform2, 3:transform3}
+        read_transformations = {1: transform1,
+                                2: transform2,
+                                3:transform3,
+                                11: mate_transform1,
+                                12: mate_transform2,
+                                13: mate_transform3}
         read_iter = iter([read1, read2, read3])
         clipper._handle_reads(handlers, read_iter, read_transformations)
         self.assertEquals(1, handler1.begin_calls)
         self.assertEquals(1, handler2.begin_calls)
         self.assertEquals(1, handler3.begin_calls)
 
-        expected_calls = [(read1, transform1),
-                          (read2, transform2),
-                          (read3, transform3)]
+        expected_calls = [(read1, transform1, mate_transform1),
+                          (read2, transform2, mate_transform2),
+                          (read3, transform3, mate_transform3)]
         self.assertEquals(expected_calls, handler1.handle_calls)
         self.assertEquals(expected_calls, handler2.handle_calls)
         self.assertEquals(expected_calls, handler3.handle_calls)
@@ -191,35 +201,64 @@ class ClipperTestCase(ClipperBaseTestCase):
         self.assertEquals(1, handler3.end_calls)
 
     def test_handle_reads_stopIterationSkipsHandlers(self):
-        read1 = MockRead(key=1)
-        read2 = MockRead(key=2)
-        read3 = MockRead(key=3)
+        read1 = MockRead(key=1, mate_key=11)
+        read2 = MockRead(key=2, mate_key=12)
+        read3 = MockRead(key=3, mate_key=13)
         handler1 = MockReadHandler()
         handler2 = MockReadHandler(handle_raise=lambda read,_: read.key==2)
         handler3 = MockReadHandler()
         handlers = [handler1, handler2, handler3]
         transform1 = ()
+        mate_transform1=()
         transform2 = ()
+        mate_transform2=()
         transform3 = ()
-
-        read_transformations = {1: transform1, 2: transform2, 3:transform3}
+        mate_transform3=()
+        read_transformations = {1: transform1,
+                                2: transform2,
+                                3:transform3,
+                                11: mate_transform1,
+                                12: mate_transform2,
+                                13: mate_transform3}
         read_iter = iter([read1, read2, read3])
+
         clipper._handle_reads(handlers, read_iter, read_transformations)
         self.assertEquals(1, handler1.begin_calls)
         self.assertEquals(1, handler2.begin_calls)
         self.assertEquals(1, handler3.begin_calls)
 
-        expected_calls12 = [(read1, transform1),
-                            (read2, transform2),
-                            (read3, transform3)]
-        expected_calls3 = [(read1, transform1),
-                           (read3, transform3)]
+        expected_calls12 = [(read1, transform1, mate_transform1),
+                            (read2, transform2, mate_transform2),
+                            (read3, transform3, mate_transform3)]
+        expected_calls3 = [(read1, transform1, mate_transform1),
+                           (read3, transform3, mate_transform3)]
         self.assertEquals(expected_calls12, handler1.handle_calls)
         self.assertEquals(expected_calls12, handler2.handle_calls)
         self.assertEquals(expected_calls3, handler3.handle_calls)
         self.assertEquals(1, handler1.end_calls)
         self.assertEquals(1, handler2.end_calls)
         self.assertEquals(1, handler3.end_calls)
+
+
+    def test_handle_reads_unmatedReadOk(self):
+        read1 = MockRead(key=1, mate_key=None)
+        handler1 = MockReadHandler()
+        handlers = [handler1]
+        transform1 = ()
+        read_transformations = {1: transform1}
+        read_iter = iter([read1])
+
+        clipper._handle_reads(handlers, read_iter, read_transformations)
+        self.assertEquals(1, handler1.begin_calls)
+
+        self.assertEquals(1, len(handler1.handle_calls))
+        actual_calls = handler1.handle_calls[0]
+        self.assertEquals(read1, actual_calls[0])
+        self.assertEquals(transform1, actual_calls[1])
+        null_transform = (clipper._PrimerPair.NULL_PRIMER_PAIR, 0, "")
+        self.assertEquals(null_transform, actual_calls[2])
+
+        self.assertEquals(1, handler1.end_calls)
 
 
     def test_initialize_primer_pairs(self):
@@ -354,23 +393,34 @@ class ReadTestCase(ClipperBaseTestCase):
                                                   reference_name="chr1",
                                                   reference_start=100,
                                                   reference_end=110,
-                                                  cigarstring="10M")
+                                                  cigarstring="10M",
+                                                  mate_is_unmapped=False)
         read = clipper._Read(mock_aligned_segment)
         self.assertEquals("chr1", read.reference_name)
         self.assertEquals(100, read.reference_start)
         self.assertEquals(110, read.reference_end)
         self.assertEquals("10M", read.cigarstring)
+        self.assertEquals(True, read.mate_is_mapped)
 
     def test_mutatorsPassThroughToAlignedSegment(self):
         mock_aligned_segment = MockAlignedSegment(query_name="read1",
                                                   reference_name="chr1",
                                                   reference_start=100,
-                                                  cigarstring="10M")
+                                                  cigarstring="10M",
+                                                  mate_is_unmapped=False,
+                                                  next_reference_start=200)
         read = clipper._Read(mock_aligned_segment)
         read.reference_start = 142
         read.cigarstring = "10S"
-        self.assertEquals(142, mock_aligned_segment.__dict__['reference_start'])
-        self.assertEquals("10S", mock_aligned_segment.__dict__['cigarstring'])
+        read.mate_is_mapped = False
+        self.assertEquals(142,
+                          mock_aligned_segment.__dict__['reference_start'])
+        self.assertEquals("10S",
+                          mock_aligned_segment.__dict__['cigarstring'])
+        self.assertEquals(True,
+                          mock_aligned_segment.__dict__['mate_is_unmapped'])
+        self.assertEquals(0,
+                          mock_aligned_segment.__dict__['next_reference_start'])
 
     def test_is_positive(self):
         read = clipper._Read(MockAlignedSegment(is_reverse=False))
@@ -432,6 +482,14 @@ class ReadTestCase(ClipperBaseTestCase):
         self.assertIsInstance(actual_reads[1], clipper._Read)
         self.assertEquals(aligned_segment2, actual_reads[1].aligned_segment)
 
+class NullPrimerPairTestCase(ClipperBaseTestCase):
+    def test_init(self):
+        null_primer_pair = clipper._NullPrimerPair()
+        old_cigar = MockCigarUtil()
+        new_cigar = null_primer_pair.softclip_primers(old_cigar)
+        self.assertEquals(old_cigar, new_cigar)
+        self.assertEquals(True, null_primer_pair.is_unmatched)
+
 class PrimerPairTestCase(ClipperBaseTestCase):
     def test_init(self):
         primer_pair = clipper._PrimerPair(target_id="target_1",
@@ -443,6 +501,7 @@ class PrimerPairTestCase(ClipperBaseTestCase):
         self.assertEquals(100, primer_pair.sense_start)
         self.assertEquals(110, primer_pair._query_region_start)
         self.assertEquals(140, primer_pair._query_region_end)
+        self.assertEquals(False, primer_pair.is_unmatched)
 
     def test_all_primers(self):
         primer_pair1 = clipper._PrimerPair(target_id="target_1",

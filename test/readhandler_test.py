@@ -93,9 +93,10 @@ class AddTagsReadHandlerTestCase(ReadHandlerBaseTestCase):
         transformation = (primer_pair,
                           new_reference_start,
                           new_cigar_string)
+        mate_transformation = None
         handler = readhandler._AddTagsReadHandler()
 
-        handler.handle(read, transformation)
+        handler.handle(read, transformation, mate_transformation)
 
         self.assertEquals("X0:Z:" + primer_pair_target,
                           read._tags["X0"])
@@ -106,6 +107,44 @@ class AddTagsReadHandlerTestCase(ReadHandlerBaseTestCase):
         self.assertEquals("X3:i:" + str(original_reference_end),
                           read._tags["X3"])
 
+
+class ExcludeReadHandlerTestCase(ReadHandlerBaseTestCase):
+    def test_handle_readAndMateMatchPrimers(self):
+        #pylint: disable=no-member
+        read = MockRead(mate_is_mapped=True)
+        primer_pair = MockPrimerPair(is_unmatched=False)
+        transformation = (primer_pair, None, None)
+        mate_transformation = (primer_pair, None, None)
+        mock_log = MockLog()
+        handler = readhandler._ExcludeNonMatchedReadHandler(log_method=mock_log)
+        handler.handle(read, transformation, mate_transformation)
+        self.assertEquals(True, read.mate_is_mapped)
+
+    def test_handle_raisesIfUnmatchedPrimer(self):
+        #pylint: disable=no-member
+        read = MockRead(mate_is_mapped=True)
+        primer_pair = MockPrimerPair(is_unmatched=True)
+        transformation = (primer_pair, None, None)
+        mate_transformation = (primer_pair, None, None)
+        mock_log = MockLog()
+        handler = readhandler._ExcludeNonMatchedReadHandler(log_method=mock_log)
+        self.assertRaises(StopIteration,
+                          handler.handle,
+                          read,
+                          transformation,
+                          mate_transformation)
+
+    def test_handle_unmapsMateIfUnmatchedPrimer(self):
+        #pylint: disable=no-member
+        read = MockRead(mate_is_mapped=True)
+        primer_pair = MockPrimerPair(is_unmatched=False)
+        mate_primer_pair = MockPrimerPair(is_unmatched=True)
+        transformation = (primer_pair, None, None)
+        mate_transformation = (mate_primer_pair, None, None)
+        mock_log = MockLog()
+        handler = readhandler._ExcludeNonMatchedReadHandler(log_method=mock_log)
+        handler.handle(read, transformation, mate_transformation)
+        self.assertEquals(False, read.mate_is_mapped)
 
 
 class StatsReadHandlerTestCase(ReadHandlerBaseTestCase):
@@ -120,13 +159,14 @@ class StatsReadHandlerTestCase(ReadHandlerBaseTestCase):
         transformation = (primer_pair,
                           new_reference_start,
                           new_cigar_string)
+        mate_transformation = None
         mock_primer_stats = MockPrimerStats()
         mock_primer_stats_dumper = MockPrimerStatsDumper()
         handler = readhandler._StatsHandler(mock_primer_stats,
                                             mock_primer_stats_dumper)
 
-        handler.handle(read1, transformation)
-        handler.handle(read2, transformation)
+        handler.handle(read1, transformation, mate_transformation)
+        handler.handle(read2, transformation, mate_transformation)
         expected_calls = [(read1, primer_pair), (read2, primer_pair)]
         self.assertEquals(expected_calls,
                           mock_primer_stats._add_read_primer_calls)
@@ -146,10 +186,36 @@ class TransformReadHandlerTestCase(ReadHandlerBaseTestCase):
         transformation = (primer_pair,
                           new_reference_start,
                           new_cigar_string)
+        mate_transformation = (MockPrimerPair(is_unmatched=True),
+                               0,
+                               "")
         handler = readhandler._TransformReadHandler()
-        handler.handle(read, transformation)
+        handler.handle(read, transformation, mate_transformation)
         self.assertEquals(102, read.reference_start)
         self.assertEquals("2S8M", read.cigarstring)
+
+    def test_handle_adjustsMateIfMatchedPrimerPair(self):
+        #pylint: disable=no-member
+        read = MockRead(mate_reference_start=100)
+        transformation = (None, 0, "")
+        mate_transformation = (MockPrimerPair(is_unmatched=False),
+                               222,
+                               "")
+        handler = readhandler._TransformReadHandler()
+        handler.handle(read, transformation, mate_transformation)
+        self.assertEquals(222, read.mate_reference_start)
+
+    def test_handle_ignoresMateIfUnmatchedPrimerPair(self):
+        #pylint: disable=no-member
+        read = MockRead(mate_reference_start=100)
+        transformation = (None, 0, "")
+        mate_transformation = (MockPrimerPair(is_unmatched=True),
+                               222,
+                               "")
+        handler = readhandler._TransformReadHandler()
+        handler.handle(read, transformation, mate_transformation)
+        self.assertEquals(100, read.mate_reference_start)
+
 
 class WriteReadHandlerTestCase(ReadHandlerBaseTestCase):
     #pylint: disable=no-member,too-many-arguments
@@ -214,8 +280,8 @@ class WriteReadHandlerTestCase(ReadHandlerBaseTestCase):
                                     reference_start=10)
 
             handler.begin()
-            handler.handle(read1, ())
-            handler.handle(read2, ())
+            handler.handle(read1, None, None)
+            handler.handle(read2, None, None)
             handler.end()
 
             actual_files = sorted(os.listdir(output_dir.path))

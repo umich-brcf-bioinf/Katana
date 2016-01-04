@@ -16,7 +16,7 @@ PYSAM_SORT = pysam.SamtoolsDispatcher("sort", None).__call__
 class _BaseReadHandler(object):
     def begin(self):
         pass
-    def handle(self, read, read_transformation):
+    def handle(self, read, read_transformation, mate_transformation):
         pass
     def end(self):
         pass
@@ -24,31 +24,39 @@ class _BaseReadHandler(object):
 
 class _AddTagsReadHandler(_BaseReadHandler):
     '''Adds original read values and other explanatory tags.'''
-    def handle(self, read, read_transformation):
+    def handle(self, read, read_transformation, mate_transformation):
         primer_pair = read_transformation[0]
         read.set_tag("X0", primer_pair.target_id, "Z")
         read.set_tag("X1", read.cigarstring, "Z")
         read.set_tag("X2", read.reference_start, "i")
         read.set_tag("X3", read.reference_end, "i")
 
-#TODO: test
 class _ExcludeNonMatchedReadHandler(_BaseReadHandler):
     '''Excludes reads from further processing'''
     STOP_ITERATION_EXCEPTION = StopIteration()
     def __init__(self, log_method):
         self._unmatched_count = 0
+        self._broken_pair_count = 0
+        self._neither_match_count = 0
         self._log_method = log_method
 
-    def handle(self, read, read_transformation):
+    def handle(self, read, read_transformation, mate_transformation):
         primer_pair = read_transformation[0]
-        if primer_pair.is_unmatched():
+        mate_primer_pair = mate_transformation[0]
+        if primer_pair.is_unmatched:
             self._unmatched_count += 1
             raise self.STOP_ITERATION_EXCEPTION
+        if read.mate_is_mapped and mate_primer_pair.is_unmatched:
+            self._broken_pair_count += 1
+            read.mate_is_mapped = False
 
     def end(self):
-        msg = ("EXCLUDE|[{}] reads did not match with a primer and will be "
+        msg = ("EXCLUDE|[{}] alignments did not match a primer and will be "
                "excluded from the output")
         self._log_method(msg, self._unmatched_count)
+        msg = ("EXCLUDE|[{}] alignment pairs were broken because their mates "
+               "did not match a primer")
+        self._log_method(msg, self._broken_pair_count)
 
 class _StatsHandler(_BaseReadHandler):
     '''Processes reads and primers connecting PrimerStats and
@@ -57,7 +65,7 @@ class _StatsHandler(_BaseReadHandler):
         self._primer_stats = primer_stats
         self._primer_stats_dumper = primer_stats_dumper
 
-    def handle(self, read, read_transformation):
+    def handle(self, read, read_transformation, mate_transformation):
         primer_pair = read_transformation[0]
         self._primer_stats.add_read_primer(read, primer_pair)
 
@@ -65,18 +73,17 @@ class _StatsHandler(_BaseReadHandler):
         self._primer_stats_dumper.dump(self._primer_stats)
 
 
-#TODO: extend to adjust mate start or unmap mate if mate unmatched
 class _TransformReadHandler(_BaseReadHandler):
-    '''Updates reference_start and cigar string.'''
-    def handle(self, read, read_transformation):
-        (dummy,
-         new_reference_start,
-         new_cigar_string) = read_transformation
+    '''Updates reference_start, cigar string, and mate_reference_start.'''
+    def handle(self, read, read_transformation, mate_transformation):
+        (new_reference_start, new_cigar_string) = read_transformation[1:]
         read.reference_start = new_reference_start
         read.cigarstring = new_cigar_string
+        (mate_primer_pair, mate_reference_start) = mate_transformation[0:2]
+        if not mate_primer_pair.is_unmatched:
+            read.mate_reference_start = mate_reference_start
 
 
-#TODO: allow suppress/divert unmatched reads
 #TODO: Add PG and CO header lines for tags
 class _WriteReadHandler(_BaseReadHandler):
     '''Writes reads to a BAM file (ultimately sorting and indexing the BAM).'''
@@ -106,7 +113,7 @@ class _WriteReadHandler(_BaseReadHandler):
             if input_bam:
                 input_bam.close()
 
-    def handle(self, read, read_transformation):
+    def handle(self, read, read_transformation, mate_transformation):
         self._read_count += 1
         self._bamfile.write(read.aligned_segment)
 
