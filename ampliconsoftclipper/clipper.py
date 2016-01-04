@@ -2,6 +2,13 @@
 """Softclips primers at edge of aligned reads based on primer locations; emits
 new BAM file with clipped reads optinoally excluding alignments that did not
 match primer locations."""
+#TODO: Add TODO file
+#TODO: elaborate module doc
+#TODO: Add README.rst
+#TODO: Add to travis
+#TODO: Test in Py3
+#TODO: Add setup.py
+#TODO: Add to PyPI
 
 ##   Copyright 2014 Bioinformatics Core, University of Michigan
 ##
@@ -17,7 +24,6 @@ match primer locations."""
 ##   See the License for the specific language governing permissions and
 ##   limitations under the License.
 
-#TODO: elaborate module doc
 from __future__ import print_function, absolute_import, division
 
 import argparse
@@ -114,7 +120,7 @@ def _initialize_primer_pairs(base_reader):
 
 def _build_handlers(input_bam_filename,
                     output_bam_filename,
-                    exclude_unmatched_reads):
+                    include_unmatched_reads):
     stats = readhandler.StatsHandler(PrimerStats(),
                                       PrimerStatsDumper(log_method=_log))
     exclude = readhandler.ExcludeNonMatchedReadHandler(log_method=_log)
@@ -124,7 +130,7 @@ def _build_handlers(input_bam_filename,
                                           output_bam_filename,
                                           log_method=_log)
     handlers = [stats, exclude, tag, transform, write]
-    if not exclude_unmatched_reads:
+    if include_unmatched_reads:
         handlers.remove(exclude)
     return handlers
 
@@ -145,11 +151,14 @@ def _parse_command_line_args(arguments):
                         help="path to input BAM")
     parser.add_argument('output_bam',
                         help="path to output BAM")
+    parser.add_argument("--include_unmatched",
+                        action="store_true",
+                        help=("Preserve all incoming alignments (even if they"
+                              "cannot be matched with primers"))
     args = parser.parse_args(arguments)
     return args
 
 #TODO: test
-#TODO: allow suppress/divert unmatched reads
 #TODO: deal if input bam missing index
 #TODO: deal if input bam regions disjoint with primer regions
 #TODO: warn/stop if less than 5% reads transformed
@@ -176,7 +185,7 @@ def main(command_line_args=None):
         _log("Writing transformed alignments to [{}]", args.output_bam)
         handlers = _build_handlers(args.input_bam,
                                    args.output_bam,
-                                   True)
+                                   args.include_unmatched)
         aligned_segment_iter = input_bamfile.fetch()
         read_iter = Read.iter(aligned_segment_iter)
         _handle_reads(handlers, read_iter, read_transformations)

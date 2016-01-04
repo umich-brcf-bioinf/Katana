@@ -2,8 +2,7 @@
 from __future__ import print_function, absolute_import
 from ampliconsoftclipper import clipper
 from ampliconsoftclipper import readhandler
-from test.util_test import ClipperBaseTestCase, MicroMock, MockAlignedSegment,\
-        MockCigarUtil, MockRead, MockReadHandler, MockPrimerPair, MockLog
+from test.util_test import ClipperBaseTestCase, MockRead, MockReadHandler
 try:
     from StringIO import StringIO
 except ImportError:
@@ -14,7 +13,7 @@ class ClipperTestCase(ClipperBaseTestCase):
     def test_build_handlers_excludeUnmatchedReads(self):
         actual_handlers = clipper._build_handlers("input_bam_filename",
                                                   "output_bam_filename",
-                                                  True)
+                                                  False)
         actual_handler_classes = [x.__class__ for x in actual_handlers]
         self.assertEquals([readhandler.StatsHandler,
                            readhandler.ExcludeNonMatchedReadHandler,
@@ -26,7 +25,7 @@ class ClipperTestCase(ClipperBaseTestCase):
     def test_build_handlers_includeUnmatchedReads(self):
         actual_handlers = clipper._build_handlers("input_bam_filename",
                                                   "output_bam_filename",
-                                                  False)
+                                                  True)
         actual_handler_classes = [x.__class__ for x in actual_handlers]
         self.assertEquals([readhandler.StatsHandler,
                            readhandler.AddTagsReadHandler,
