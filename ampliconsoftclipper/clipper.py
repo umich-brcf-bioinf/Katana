@@ -1,10 +1,12 @@
 #! /usr/bin/env python
 """Softclips primers at edge of aligned reads based on primer locations; emits
-new BAM file with clipped reads optinoally excluding alignments that did not
+new BAM file with clipped reads optionally excluding alignments that did not
 match primer locations."""
 #TODO: Add TODO file
 #TODO: elaborate module doc
 #TODO: Add README.rst
+#TODO: Add ability to parse Illumna primer files
+#TODO: Emit primer bed file
 #TODO: Add to travis
 #TODO: Test in Py3
 #TODO: Add setup.py
