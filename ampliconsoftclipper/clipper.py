@@ -38,8 +38,8 @@ import traceback
 import ampliconsoftclipper
 import ampliconsoftclipper.cigar as cigar
 import ampliconsoftclipper.readhandler as readhandler
-from ampliconsoftclipper.util import PrimerStats, PrimerStatsDumper,\
-        PrimerPair, Read
+from ampliconsoftclipper.util import ClipperException, PrimerStats,\
+        PrimerStatsDumper, PrimerPair, Read
 
 __version__ = ampliconsoftclipper.__version__
 
@@ -82,13 +82,21 @@ def _build_read_transformations(read_iter):
     read_transformations = {}
     read_count = 0
     for read in read_iter:
-        primer_pair = PrimerPair.get_primer_pair(read)
-        old_cigar = cigar.cigar_factory(read)
-        new_cigar = primer_pair.softclip_primers(old_cigar)
-        read_transformations[read.key] = (primer_pair,
-                                          new_cigar.reference_start,
-                                          new_cigar.cigar)
-        read_count += 1
+        try:
+            primer_pair = PrimerPair.get_primer_pair(read)
+            old_cigar = cigar.cigar_factory(read)
+            new_cigar = primer_pair.softclip_primers(old_cigar)
+            read_transformations[read.key] = (primer_pair,
+                                              new_cigar.reference_start,
+                                              new_cigar.cigar)
+            read_count += 1
+        #TODO: test
+        except ClipperException as exception:
+            msg = "Problem with read {} [line {}] and primer pair {}: {}"
+            raise ClipperException(msg.format(read.query_name,
+                                        read_count,
+                                        primer_pair.target_id,
+                                        exception))
     _log("Built transforms for [{}] alignments", read_count)
     return read_transformations
 

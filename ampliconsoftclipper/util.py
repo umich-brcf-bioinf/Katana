@@ -1,11 +1,17 @@
 """Classes common to several modules"""
 #TODO: elaborate module doc
 from __future__ import print_function, absolute_import, division
-
 from collections import defaultdict
 import itertools
-
 import natsort
+
+
+class ClipperException(Exception):
+    """Flagging cases that we can not process at this time."""
+    def __init__(self, msg, *args):
+        #pylint: disable=star-args
+        error_msg = msg.format(*[str(i) for i in args])
+        super(ClipperException, self).__init__(error_msg)
 
 
 #TODO: Capture mapped pairs for each primer
@@ -96,6 +102,11 @@ class Read(object):
         self.aligned_segment.mate_is_unmapped = not value
         if not value:
             self.aligned_segment.next_reference_start = 0
+
+    #TODO: test
+    @property
+    def query_name(self):
+        return self.aligned_segment.query_name
 
     @property
     def reference_name(self):

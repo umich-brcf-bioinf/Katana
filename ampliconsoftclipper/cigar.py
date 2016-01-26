@@ -1,26 +1,20 @@
-""" Super-basic CIGAR manipulation and querying. """
+"""Basic CIGAR manipulation and querying. """
 
 from __future__ import print_function, absolute_import, division
 import itertools
 import re
-
-
-# class CigarException(Exception):
-#     """Flagging cases that we can not process at this time."""
-#     def __init__(self, msg, *args):
-#         #pylint: disable=star-args
-#         error_msg = msg.format(*[str(i) for i in args])
-#         super(CigarException, self).__init__(error_msg)
+import ampliconsoftclipper.util as util
 
 
 class CigarUtil(object):
-    _REGEX_QUERY_NON_CONSUMING = re.compile("[DNP]") #Preserve H?
-    _REGEX_NON_HARDCLIP = re.compile("[^H]")
-    _REGEX_MATCHING_OP = re.compile("[MX=]")
-    _REGEX_CIGAR = re.compile("([0-9]+)([MIDNSHP=X])")
     _QUERY_CONSUMING = set(list("MIS=X"))
     _REF_CONSUMING = set(list("MDNS=X")) #S is debatable, but works better
+    _REGEX_CIGAR = re.compile("([0-9]+)([MIDNSHP=X])")
+    _REGEX_MATCHING_OP = re.compile("[MX=]")
+    _REGEX_NON_HARDCLIP = re.compile("[^H]")
     _REGEX_REF_CONSUMING = re.compile("[MDNS=X]")
+    _REGEX_QUERY_CONSUMING = re.compile("[MIS=X]")
+    _REGEX_QUERY_NON_CONSUMING = re.compile("[DNP]") #Preserve H?
 
     def __init__(self, reference_start, cigar=None, cigar_profile=None):
         self.reference_start = reference_start
@@ -130,6 +124,21 @@ class CigarUtil(object):
                 CigarUtil(constrain(region_end),
                           cigar_profile=after_profile))
 
+    #TODO: test
+    def _check_length(self, new_profile):
+        #TODO: make sequence length an attribute of CigarUtil
+        old_length = len(self._REGEX_QUERY_CONSUMING.findall(self.cigar_profile))
+        new_length = len(self._REGEX_QUERY_CONSUMING.findall(new_profile))
+        if old_length != new_length:
+            new_cigar = self._collapse_cigar_profile(new_profile)
+            msg = ("Old CIGAR length [{}] ({}) != new CIGAR length"
+                    "[{}] ({})").format(self.cigar,
+                                        old_length,
+                                        new_cigar,
+                                        new_length)
+            raise util.ClipperException(msg)
+
+
     def softclip_target(self, target_start, target_end):
         (pre_target, target, post_target) = self._partition_cigar(target_start,
                                                                   target_end)
@@ -139,11 +148,8 @@ class CigarUtil(object):
                                                          target.cigar_profile)
         post_profile = self._softclip(post_target.cigar_profile)
         new_profile = pre_profile + target_profile + post_profile
+        self._check_length(new_profile)     #TODO: test
         return CigarUtil(new_pos, cigar_profile = new_profile)
-
-#     @staticmethod
-#     def is_null():
-#         return False
 
 
 class NullCigarUtil(object):
@@ -155,9 +161,6 @@ class NullCigarUtil(object):
     def softclip_target(self, target_start, target_end):
         return self
 
-#     @staticmethod
-#     def is_null():
-#         return True
 
 def cigar_factory(read):
     if not read.cigarstring or read.cigarstring == "*":
