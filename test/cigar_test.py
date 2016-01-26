@@ -203,6 +203,18 @@ class CigarUtilTestCase(unittest.TestCase):
         self.assertEquals(cigar.CigarUtil(50,""), c2)
         self.assertEquals(cigar.CigarUtil(50,""), c3)
 
+    def test_partition_cigar_targetRegionBoundedByShortReverseRead(self):
+        util = cigar.CigarUtil(100, "20M")
+        (c1, c2, c3) = util._partition_cigar(90, 120)
+        self.assertEquals(100, c1.reference_start)
+        self.assertEquals("", c1.cigar)
+        self.assertEquals(100, c2.reference_start)
+        self.assertEquals("20M", c2.cigar)
+        self.assertEquals(120, c3.reference_start)
+        self.assertEquals("", c3.cigar)
+
+
+
     def test_softclip_target(self):
         util = cigar.CigarUtil(42, "10M")
         new_util = util.softclip_target(44,50)

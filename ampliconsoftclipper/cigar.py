@@ -110,7 +110,7 @@ class CigarUtil(object):
         read_end = read_start + len(pos_profile)
         constrain = lambda x: max(read_start, min(read_end, x))
 
-        region_start_index = region_start - read_start
+        region_start_index = max(region_start - read_start, 0)
         region_end_index = region_end - read_start
 
         before_profile = "".join(pos_profile[0:region_start_index])
