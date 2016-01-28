@@ -8,8 +8,8 @@ def read(*paths):
     with open(os.path.join(*paths), 'r') as filename:
         return filename.read()
 
-setup(name='zither',
-      version=zither.__version__,
+setup(name='AmpliconSoftClipper',
+      version = ampliconsoftclipper.__version__,
       description=('Command-line tool to soft-clip reads based on primer locations.'),
       long_description=(read('README.rst') + '\n\n' +
                         read('CHANGELOG.rst') + '\n\n' +
@@ -27,9 +27,9 @@ setup(name='zither',
                    'Programming Language :: Python :: 2.7',
                    'Topic :: Scientific/Engineering :: Bio-Informatics'],
       keywords='bioinformatic exome-seq DNA-seq BAM',
-      install_requires=['pysam'],
+      install_requires=['pysam', 'natsort'],
       entry_points={'console_scripts': ['clipper=ampliconsoftclipper.clipper:main']},
       test_suite='nose.collector',
-      tests_require=['nose', 'pysam'],
+      tests_require=['nose', 'pysam', 'natsort'],
       zip_safe=False)
 
