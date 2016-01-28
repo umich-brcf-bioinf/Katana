@@ -30,6 +30,6 @@ setup(name='AmpliconSoftClipper',
       install_requires=['pysam', 'natsort'],
       entry_points={'console_scripts': ['clipper=ampliconsoftclipper.clipper:main']},
       test_suite='nose.collector',
-      tests_require=['nose', 'pysam', 'natsort'],
+      tests_require=['nose', 'pysam', 'natsort','testfixtures'],
       zip_safe=False)
 
