@@ -1,4 +1,3 @@
-ngs-plumbing==0.13.0
-numpy==1.8.1rc1
-pybedtools==0.7.1
-pysam==0.8.4
+natsort==4.0.4
+pysam>=0.8.4
+testfixtures>=3.0.2
