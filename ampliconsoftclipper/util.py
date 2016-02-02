@@ -19,15 +19,17 @@ class ClipperException(Exception):
 class PrimerStats(object):
     '''Collects simple counts for overall reads and reads per primer.'''
     STAT_KEYS = ["chrom", "target_id", "sense_start", "sense_count",
-                 "antisense_count", "sense_percent", "antisense_percent"]
+                 "antisense_count", "sense_percent"]
     def __init__(self):
         self.total_read_count = 0
         self._primer_stats = defaultdict(int)
 
 
-    def _percent(self, primer, is_sense):
-        read_count = self._primer_stats[primer, is_sense]
-        return int(100 * read_count / self.total_read_count)
+    def _sense_percent(self, primer):
+        sense_read_count = self._primer_stats[primer, True]
+        antisense_read_count = self._primer_stats[primer, False]
+        return int(100 * sense_read_count / \
+                   (antisense_read_count + sense_read_count))
 
     def add_read_primer(self, read, primer_pair):
         self.total_read_count +=1
@@ -46,8 +48,7 @@ class PrimerStats(object):
                   primer_pair.sense_start,
                   self._primer_stats[primer_pair, True],
                   self._primer_stats[primer_pair, False],
-                  self._percent(primer_pair, True),
-                  self._percent(primer_pair, False)]
+                  self._sense_percent(primer_pair)]
         return dict(itertools.izip(PrimerStats.STAT_KEYS, values))
 
 
@@ -66,7 +67,7 @@ class PrimerStatsDumper(object):
             stats = [stat_dict[key] for key in primer_stats.STAT_KEYS]
             self._log_method(stat_format.format(*stats))
 
-
+#TODO: sort methods
 class Read(object):
     '''Lightweight wrapper around AlignedSegment'''
     def __init__(self, aligned_segment):
@@ -76,34 +77,60 @@ class Read(object):
     def is_positive_strand(self):
         return not self.aligned_segment.is_reverse
 
+    def _key(self, mate=False):
+        key = None
+        if not mate:
+            key= (self.aligned_segment.query_name,
+                  self.is_positive_strand,
+                  self.aligned_segment.reference_name,
+                  self.aligned_segment.reference_start,
+                  self.aligned_segment.is_read1)
+        elif self.aligned_segment.is_paired and \
+                (not self.aligned_segment.mate_is_unmapped):
+            key = (self.aligned_segment.query_name,
+                   not self.aligned_segment.mate_is_reverse,
+                   self.aligned_segment.next_reference_name,
+                   self.aligned_segment.next_reference_start,
+                   not self.aligned_segment.is_read1)
+        return key
+
     @property
     def key(self):
-        return (self.aligned_segment.query_name,
-                self.is_positive_strand,
-                self.aligned_segment.reference_name,
-                self.aligned_segment.reference_start)
+        return self._key(False)
+
+    @property
+    def next_reference_start(self):
+        return self.aligned_segment.next_reference_start
+
+    @next_reference_start.setter
+    def next_reference_start(self, value):
+        self.aligned_segment.next_reference_start = value
+
 
     @property
     def mate_key(self):
-        if not self.aligned_segment.is_paired \
-                or self.aligned_segment.mate_is_unmapped:
-            return None
-        return (self.aligned_segment.query_name,
-                not self.aligned_segment.mate_is_reverse,
-                self.aligned_segment.next_reference_name,
-                self.aligned_segment.next_reference_start)
+        return self._key(True)
 
     @property
-    def mate_is_mapped(self):
-        return not self.aligned_segment.mate_is_unmapped
+    def is_unmapped(self):
+        return self.aligned_segment.is_unmapped
 
-    @mate_is_mapped.setter
-    def mate_is_mapped(self, value):
-        self.aligned_segment.mate_is_unmapped = not value
+    @property
+    def mate_is_paired(self):
+        return self.aligned_segment.is_paired
+
+    @mate_is_paired.setter
+    def is_paired(self, value):
+        self.aligned_segment.is_paired = value
         if not value:
+            self.aligned_segment.mate_is_unmapped = False
+            self.aligned_segment.mate_is_reverse = False
+            self.aligned_segment.is_proper_pair = False
+            self.aligned_segment.is_read1 = False
+            self.aligned_segment.is_read2 = False
+            self.aligned_segment.next_reference_id = -1
             self.aligned_segment.next_reference_start = 0
 
-    #TODO: test
     @property
     def query_name(self):
         return self.aligned_segment.query_name

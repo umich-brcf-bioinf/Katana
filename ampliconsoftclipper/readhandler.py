@@ -2,9 +2,10 @@
 #TODO: elaborate module doc
 from __future__ import print_function, absolute_import, division
 
+from collections import defaultdict
 import os
 import pysam
-
+import re
 
 # I would rather just say pysam.index(...), but since that global is
 # added dynamically, Eclipse flags this as a compilation problem. So
@@ -31,32 +32,45 @@ class AddTagsReadHandler(_BaseReadHandler):
         read.set_tag("X2", read.reference_start, "i")
         read.set_tag("X3", read.reference_end, "i")
 
+#TODO: test
+#TODO: Cleanup read vs mate read filtering/unpairing
 class ExcludeNonMatchedReadHandler(_BaseReadHandler):
     '''Excludes reads from further processing'''
-    STOP_ITERATION_EXCEPTION = StopIteration()
+    _REF_CONSUMING_REGEX = re.compile("M|I|D|N|=|X")
+    _STOP_ITERATION_EXCEPTION = StopIteration()
     def __init__(self, log_method):
-        self._unmatched_count = 0
-        self._broken_pair_count = 0
-        self._neither_match_count = 0
         self._log_method = log_method
+        self.all_exclusions = defaultdict(int)
 
     def handle(self, read, read_transformation, mate_transformation):
         primer_pair = read_transformation[0]
+        new_cigar = read_transformation[2]
         mate_primer_pair = mate_transformation[0]
+        mate_new_cigar = mate_transformation[2]
+
+        exclusions = []
         if primer_pair.is_unmatched:
-            self._unmatched_count += 1
-            raise self.STOP_ITERATION_EXCEPTION
-        if read.mate_is_mapped and mate_primer_pair.is_unmatched:
-            self._broken_pair_count += 1
-            read.mate_is_mapped = False
+            exclusions.append("primer pair is unmatched")
+        if read.is_unmapped:
+            exclusions.append("alignment is unmapped")
+        if not self._REF_CONSUMING_REGEX.search(new_cigar):
+            exclusions.append("all cigar ops clipped")
+        if exclusions:
+            self.all_exclusions[tuple(exclusions)] += 1
+            raise self._STOP_ITERATION_EXCEPTION
+        elif read.is_paired and mate_primer_pair.is_unmatched:
+            #read.mate_is_mapped = False
+            read.is_paired = False
+        elif read.is_paired and not self._REF_CONSUMING_REGEX.search(mate_new_cigar):
+            read.is_paired = False
+
 
     def end(self):
-        msg = ("EXCLUDE|[{}] alignments did not match a primer and will be "
-               "excluded from the output")
-        self._log_method(msg, self._unmatched_count)
-        msg = ("EXCLUDE|[{}] alignment pairs were broken because their mates "
-               "did not match a primer")
-        self._log_method(msg, self._broken_pair_count)
+        for (exclusion, count) in self.all_exclusions.items():
+            msg = ("EXCLUDE|[{}] alignments were excluded because: {}")
+            self._log_method(msg, count, ",".join(exclusion))
+
+
 
 class StatsHandler(_BaseReadHandler):
     '''Processes reads and primers connecting PrimerStats and
@@ -81,7 +95,7 @@ class TransformReadHandler(_BaseReadHandler):
         read.cigarstring = new_cigar_string
         (mate_primer_pair, mate_reference_start) = mate_transformation[0:2]
         if not mate_primer_pair.is_unmatched:
-            read.mate_reference_start = mate_reference_start
+            read.next_reference_start = mate_reference_start
 
 
 #TODO: Add PG and CO header lines for tags

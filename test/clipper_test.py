@@ -3,6 +3,7 @@ from __future__ import print_function, absolute_import
 from ampliconsoftclipper import clipper
 from ampliconsoftclipper import readhandler
 from test.util_test import ClipperBaseTestCase, MockRead, MockReadHandler
+import ampliconsoftclipper.util
 try:
     from StringIO import StringIO
 except ImportError:
@@ -69,6 +70,29 @@ class ClipperTestCase(ClipperBaseTestCase):
                           actual_read_transforms[222])
         self.assertEquals((clipper.PrimerPair.NULL_PRIMER_PAIR, 333, "10M"),
                           actual_read_transforms[333])
+
+    def test_build_read_transformations_reraisesExceptions(self):
+        clipper.PrimerPair(target_id="target_1",
+                           chrom="chr42",
+                           sense_primer_region=(100,102),
+                           antisense_primer_region=(148,150))
+        read1 = MockRead(query_name="readA-sense",
+                        is_positive_strand=True,
+                        reference_name="chr42",
+                        reference_start=100,
+                        reference_end=150,
+                        cigarstring="10M",
+                        key=111)
+        read2 = MockRead(query_name="readB-antisense",
+                        key=222)
+
+        read_iter = iter([read1, read2])
+
+        self.assertRaisesRegexp(ampliconsoftclipper.util.ClipperException,
+                                (r"Problem with read readB-antisense "
+                                 r"\[line 2\] and primer pair target_1: .*"),
+                                clipper._build_read_transformations,
+                                read_iter)
 
     def test_handle_reads(self):
         handler1 = MockReadHandler()

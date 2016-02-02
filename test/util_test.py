@@ -104,7 +104,7 @@ class MockPrimerPair(MicroMock):
 
 class PrimerStatsTestCase(ClipperBaseTestCase):
     def test_stat_keys(self):
-        self.assertEquals(7, len(util.PrimerStats.STAT_KEYS))
+        self.assertEquals(6, len(util.PrimerStats.STAT_KEYS))
 
     def test_total_read_count(self):
         read_sense = MockRead(is_positive_strand=True)
@@ -182,8 +182,7 @@ class PrimerStatsTestCase(ClipperBaseTestCase):
         self.assertEquals(222, stats1["sense_start"])
         self.assertEquals(1, stats1["sense_count"])
         self.assertEquals(0, stats1["antisense_count"])
-        self.assertEquals(25, stats1["sense_percent"])
-        self.assertEquals(0, stats1["antisense_percent"])
+        self.assertEquals(100, stats1["sense_percent"])
 
         stats2 = stats.stats(primer_pair2)
         self.assertEquals(len(util.PrimerStats.STAT_KEYS), len(stats2))
@@ -192,8 +191,7 @@ class PrimerStatsTestCase(ClipperBaseTestCase):
         self.assertEquals(444, stats2["sense_start"])
         self.assertEquals(2, stats2["sense_count"])
         self.assertEquals(1, stats2["antisense_count"])
-        self.assertEquals(50, stats2["sense_percent"])
-        self.assertEquals(25, stats2["antisense_percent"])
+        self.assertEquals(66, stats2["sense_percent"])
 
 
 class PrimerStatsDumperTestCase(ClipperBaseTestCase):
@@ -215,36 +213,63 @@ class PrimerStatsDumperTestCase(ClipperBaseTestCase):
 
 class ReadTestCase(ClipperBaseTestCase):
     def test_init(self):
-        mock_aligned_segment = MockAlignedSegment(query_name="read1",
+        mock_aligned_segment = MockAlignedSegment(query_name="readA",
                                                   reference_name="chr1",
                                                   reference_start=100,
                                                   reference_end=110,
                                                   cigarstring="10M",
-                                                  mate_is_unmapped=False)
+                                                  is_paired=True)
         read = util.Read(mock_aligned_segment)
+        self.assertEquals("readA", read.query_name)
         self.assertEquals("chr1", read.reference_name)
         self.assertEquals(100, read.reference_start)
         self.assertEquals(110, read.reference_end)
         self.assertEquals("10M", read.cigarstring)
-        self.assertEquals(True, read.mate_is_mapped)
+        self.assertEquals(True, read.is_paired)
 
     def test_mutatorsPassThroughToAlignedSegment(self):
         mock_aligned_segment = MockAlignedSegment(query_name="read1",
                                                   reference_name="chr1",
                                                   reference_start=100,
                                                   cigarstring="10M",
-                                                  mate_is_unmapped=False,
-                                                  next_reference_start=200)
+                                                  next_reference_start=150)
         read = util.Read(mock_aligned_segment)
         read.reference_start = 142
         read.cigarstring = "10S"
-        read.mate_is_mapped = False
+        read.next_reference_start = 200
         self.assertEquals(142,
                           mock_aligned_segment.__dict__['reference_start'])
         self.assertEquals("10S",
                           mock_aligned_segment.__dict__['cigarstring'])
-        self.assertEquals(True,
+        self.assertEquals(200,
+                          mock_aligned_segment.__dict__['next_reference_start'])
+
+    def test_isPaired(self):
+        mock_aligned_segment = MockAlignedSegment(query_name="read1",
+                                                  reference_name="chr1",
+                                                  reference_start=100,
+                                                  cigarstring="10M",
+                                                  is_paired=True,
+                                                  mate_is_unmapped = True,
+                                                  mate_is_reverse = True,
+                                                  is_proper_pair = True,
+                                                  is_read1 = True,
+                                                  next_reference_id = 1,
+                                                  next_reference_start=200)
+        read = util.Read(mock_aligned_segment)
+
+        read.is_paired = False
+
+        self.assertEquals(False,
+                          mock_aligned_segment.__dict__['is_paired'])
+        self.assertEquals(False,
                           mock_aligned_segment.__dict__['mate_is_unmapped'])
+        self.assertEquals(False,
+                          mock_aligned_segment.__dict__['is_proper_pair'])
+        self.assertEquals(False,
+                          mock_aligned_segment.__dict__['is_read1'])
+        self.assertEquals(-1,
+                          mock_aligned_segment.__dict__['next_reference_id'])
         self.assertEquals(0,
                           mock_aligned_segment.__dict__['next_reference_start'])
 
@@ -255,23 +280,25 @@ class ReadTestCase(ClipperBaseTestCase):
         self.assertEquals(False, read.is_positive_strand)
 
     def test_key(self):
-        mock_aligned_segment = MockAlignedSegment(query_name="read1",
+        mock_aligned_segment = MockAlignedSegment(query_name="readA",
                                                   reference_name="chr1",
                                                   reference_start=100,
-                                                  is_reverse=False)
+                                                  is_reverse=False,
+                                                  is_read1=True)
         read = util.Read(mock_aligned_segment)
-        expected_key = ("read1", True, "chr1", 100)
+        expected_key = ("readA", True, "chr1", 100, True)
         self.assertEquals(expected_key, read.key)
 
     def test_mate_key(self):
-        mock_aligned_segment = MockAlignedSegment(query_name="read1",
+        mock_aligned_segment = MockAlignedSegment(query_name="readA",
                                                   is_paired=True,
                                                   mate_is_unmapped=False,
                                                   mate_is_reverse=True,
                                                   next_reference_name="chr2",
-                                                  next_reference_start=200)
+                                                  next_reference_start=200,
+                                                  is_read1=True)
         read = util.Read(mock_aligned_segment)
-        expected_key = ("read1", False, "chr2", 200)
+        expected_key = ("readA", False, "chr2", 200, False)
         self.assertEquals(expected_key, read.mate_key)
 
     def test_mate_key_noneWhenNoMate(self):

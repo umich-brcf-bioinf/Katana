@@ -9,8 +9,9 @@ match primer locations."""
 #TODO: Emit primer bed file
 #TODO: Add to travis
 #TODO: Test in Py3
-#TODO: Add setup.py
 #TODO: Add to PyPI
+#TODO: Profile and improve performance
+#TODO: Adjust to work with pysam 0.8.5
 
 ##   Copyright 2014 Bioinformatics Core, University of Michigan
 ##
@@ -83,15 +84,14 @@ def _build_read_transformations(read_iter):
     read_count = 0
     for read in read_iter:
         try:
+            read_count += 1
             primer_pair = PrimerPair.get_primer_pair(read)
             old_cigar = cigar.cigar_factory(read)
             new_cigar = primer_pair.softclip_primers(old_cigar)
             read_transformations[read.key] = (primer_pair,
                                               new_cigar.reference_start,
                                               new_cigar.cigar)
-            read_count += 1
-        #TODO: test
-        except ClipperException as exception:
+        except Exception as exception:
             msg = "Problem with read {} [line {}] and primer pair {}: {}"
             raise ClipperException(msg.format(read.query_name,
                                         read_count,
@@ -168,6 +168,7 @@ def _parse_command_line_args(arguments):
     args = parser.parse_args(arguments)
     return args
 
+#TODO: correctly process pairs at same coordinate where one is unmapped
 #TODO: test
 #TODO: deal if input bam missing index
 #TODO: deal if input bam regions disjoint with primer regions
@@ -219,4 +220,6 @@ def main(command_line_args=None):
 
 
 if __name__ == '__main__':
+    #import cProfile
+    #cProfile.run('main()')
     main(sys.argv)

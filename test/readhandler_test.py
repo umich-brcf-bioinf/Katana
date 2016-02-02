@@ -61,10 +61,10 @@ class AddTagsReadHandlerTestCase(ClipperBaseTestCase):
 class ExcludeReadHandlerTestCase(ClipperBaseTestCase):
     def test_handle_readAndMateMatchPrimers(self):
         #pylint: disable=no-member
-        read = MockRead(mate_is_mapped=True)
+        read = MockRead(is_paired=True, mate_is_mapped=True, is_unmapped=False)
         primer_pair = MockPrimerPair(is_unmatched=False)
-        transformation = (primer_pair, None, None)
-        mate_transformation = (primer_pair, None, None)
+        transformation = (primer_pair, None, "1M")
+        mate_transformation = (primer_pair, None, "1M")
         mock_log = MockLog()
         handler = readhandler.ExcludeNonMatchedReadHandler(log_method=mock_log)
         handler.handle(read, transformation, mate_transformation)
@@ -72,10 +72,10 @@ class ExcludeReadHandlerTestCase(ClipperBaseTestCase):
 
     def test_handle_raisesIfUnmatchedPrimer(self):
         #pylint: disable=no-member
-        read = MockRead(mate_is_mapped=True)
+        read = MockRead(is_paired=True, mate_is_mapped=True, is_unmapped=False)
         primer_pair = MockPrimerPair(is_unmatched=True)
-        transformation = (primer_pair, None, None)
-        mate_transformation = (primer_pair, None, None)
+        transformation = (primer_pair, None, "1M")
+        mate_transformation = (primer_pair, None, "1M")
         mock_log = MockLog()
         handler = readhandler.ExcludeNonMatchedReadHandler(log_method=mock_log)
         self.assertRaises(StopIteration,
@@ -84,17 +84,17 @@ class ExcludeReadHandlerTestCase(ClipperBaseTestCase):
                           transformation,
                           mate_transformation)
 
-    def test_handle_unmapsMateIfUnmatchedPrimer(self):
+    def test_handle_unpairsReadIfMateUnmatchedPrimer(self):
         #pylint: disable=no-member
-        read = MockRead(mate_is_mapped=True)
+        read = MockRead(is_paired=True, is_unmapped=False, mate_is_mapped=True)
         primer_pair = MockPrimerPair(is_unmatched=False)
         mate_primer_pair = MockPrimerPair(is_unmatched=True)
-        transformation = (primer_pair, None, None)
+        transformation = (primer_pair, None, "1M")
         mate_transformation = (mate_primer_pair, None, None)
         mock_log = MockLog()
         handler = readhandler.ExcludeNonMatchedReadHandler(log_method=mock_log)
         handler.handle(read, transformation, mate_transformation)
-        self.assertEquals(False, read.mate_is_mapped)
+        self.assertEquals(False, read.is_paired)
 
 
 class StatsReadHandlerTestCase(ClipperBaseTestCase):
@@ -153,7 +153,7 @@ class TransformReadHandlerTestCase(ClipperBaseTestCase):
                                "")
         handler = readhandler.TransformReadHandler()
         handler.handle(read, transformation, mate_transformation)
-        self.assertEquals(222, read.mate_reference_start)
+        self.assertEquals(222, read.next_reference_start)
 
     def test_handle_ignoresMateIfUnmatchedPrimerPair(self):
         #pylint: disable=no-member

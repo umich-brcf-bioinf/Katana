@@ -20,6 +20,7 @@ class CigarUtil(object):
         self.reference_start = reference_start
         self.cigar = ""
         self.cigar_profile = ""
+
         if cigar:
             self.cigar = cigar
         elif cigar_profile:
@@ -28,6 +29,14 @@ class CigarUtil(object):
             self.cigar_profile = cigar_profile
         else:
             self.cigar_profile = self._expand_cigar(self.cigar)
+
+        self.query_length = len(self._REGEX_QUERY_CONSUMING.findall(self.cigar_profile))
+
+    def __repr__(self):
+        return ("{}(reference_start={}, "
+                "cigar='{}')").format(self.__class__,
+                                      self.reference_start,
+                                      self.cigar)
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
@@ -68,6 +77,7 @@ class CigarUtil(object):
         new_cigar = [str(len(op)) + op[0] for op in op_strings]
         return "".join(new_cigar)
 
+    #TODO: lazy init property
     def _pos_profiles(self, profile):
         '''Returns a list of tuple of first match index and a list of profiles.
         Each list element is the cigar profile for that reference position; i.e.
@@ -124,21 +134,16 @@ class CigarUtil(object):
                 CigarUtil(constrain(region_end),
                           cigar_profile=after_profile))
 
-    #TODO: test
-    def _check_length(self, new_profile):
-        #TODO: make sequence length an attribute of CigarUtil
-        old_length = len(self._REGEX_QUERY_CONSUMING.findall(self.cigar_profile))
-        new_length = len(self._REGEX_QUERY_CONSUMING.findall(new_profile))
-        if old_length != new_length:
-            new_cigar = self._collapse_cigar_profile(new_profile)
-            msg = ("Old CIGAR length [{}] ({}) != new CIGAR length"
+    def _assert_query_lengths_match(self, new_cigar):
+        if self.query_length != new_cigar.query_length:
+            msg = ("Old CIGAR query length [{}] ({}) != new CIGAR length"
                     "[{}] ({})").format(self.cigar,
-                                        old_length,
-                                        new_cigar,
-                                        new_length)
+                                        self.query_length,
+                                        new_cigar.cigar,
+                                        new_cigar.query_length)
             raise util.ClipperException(msg)
 
-
+    #TODO: consider caching
     def softclip_target(self, target_start, target_end):
         (pre_target, target, post_target) = self._partition_cigar(target_start,
                                                                   target_end)
@@ -148,8 +153,9 @@ class CigarUtil(object):
                                                          target.cigar_profile)
         post_profile = self._softclip(post_target.cigar_profile)
         new_profile = pre_profile + target_profile + post_profile
-        self._check_length(new_profile)     #TODO: test
-        return CigarUtil(new_pos, cigar_profile = new_profile)
+        new_cigar = CigarUtil(new_pos, cigar_profile = new_profile)
+        self._assert_query_lengths_match(new_cigar)
+        return  new_cigar
 
 
 class NullCigarUtil(object):
@@ -161,7 +167,7 @@ class NullCigarUtil(object):
     def softclip_target(self, target_start, target_end):
         return self
 
-
+#TODO: consider caching CigarUtils
 def cigar_factory(read):
     if not read.cigarstring or read.cigarstring == "*":
         return NullCigarUtil(read.reference_start)
