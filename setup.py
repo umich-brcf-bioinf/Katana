@@ -1,3 +1,4 @@
+#pylint: disable=line-too-long
 from setuptools import setup
 from setuptools import find_packages
 import os
@@ -32,4 +33,3 @@ setup(name='AmpliconSoftClipper',
       test_suite='nose.collector',
       tests_require=['nose', 'pysam', 'natsort','testfixtures'],
       zip_safe=False)
-

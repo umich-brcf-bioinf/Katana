@@ -40,7 +40,7 @@ import ampliconsoftclipper
 import ampliconsoftclipper.cigar as cigar
 import ampliconsoftclipper.readhandler as readhandler
 from ampliconsoftclipper.util import ClipperException, PrimerStats,\
-        PrimerStatsDumper, PrimerPair, Read
+        PrimerStatsDumper, PrimerPair, Read, ReadTransformation
 
 __version__ = ampliconsoftclipper.__version__
 
@@ -69,7 +69,8 @@ class _ClipperArgumentParser(argparse.ArgumentParser):
         raise _ClipperUsageError(message)
 
 
-#TODO: make this a logger object that writes to file and console and supports debug and info calls
+#TODO: make this a logger object that writes to file and console and
+# supports debug and info calls
 def _log(msg_format, *args):
     timestamp = datetime.now().strftime('%Y/%m/%d %H:%M:%S')
     try:
@@ -79,7 +80,18 @@ def _log(msg_format, *args):
         print(args)
     sys.stderr.flush()
 
-def _build_read_transformations(read_iter):
+def _filter_builder(read_transformation):
+    filters = []
+    if read_transformation.is_unmapped:
+        filters.append("UNMAPPED_ALIGNMENT")
+    else:
+        if read_transformation.primer_pair.is_unmatched:
+            filters.append("UNMATCHED_PRIMER_PAIR")
+        if not read_transformation.is_cigar_valid:
+            filters.append("INVALID_CIGAR")
+    return filters
+
+def _build_read_transformations(read_iter, filter_builder):
     read_transformations = {}
     read_count = 0
     for read in read_iter:
@@ -88,9 +100,11 @@ def _build_read_transformations(read_iter):
             primer_pair = PrimerPair.get_primer_pair(read)
             old_cigar = cigar.cigar_factory(read)
             new_cigar = primer_pair.softclip_primers(old_cigar)
-            read_transformations[read.key] = (primer_pair,
-                                              new_cigar.reference_start,
-                                              new_cigar.cigar)
+            transform = ReadTransformation(read,
+                                           primer_pair,
+                                           new_cigar,
+                                           filter_builder)
+            read_transformations[read.key] = transform
         except Exception as exception:
             msg = "Problem with read {} [line {}] and primer pair {}: {}"
             raise ClipperException(msg.format(read.query_name,
@@ -100,14 +114,14 @@ def _build_read_transformations(read_iter):
     _log("Built transforms for [{}] alignments", read_count)
     return read_transformations
 
+
 def _handle_reads(read_handlers, read_iter, read_transformations):
-    null_transformation = (PrimerPair.NULL_PRIMER_PAIR, 0, "")
     for handler in read_handlers:
         handler.begin()
     for read in read_iter:
         read_transformation = read_transformations[read.key]
         mate_transformation = read_transformations.get(read.mate_key,
-                                                       null_transformation)
+                                                       ReadTransformation.NULL)
         try:
             for handler in read_handlers:
                 handler.handle(read, read_transformation, mate_transformation)
@@ -139,7 +153,7 @@ def _build_handlers(input_bam_filename,
     write = readhandler.WriteReadHandler(input_bam_filename,
                                           output_bam_filename,
                                           log_method=_log)
-    handlers = [stats, exclude, tag, transform, write]
+    handlers = [stats, tag, transform, exclude, write]
     if include_unmatched_reads:
         handlers.remove(exclude)
     return handlers
@@ -161,10 +175,11 @@ def _parse_command_line_args(arguments):
                         help="path to input BAM")
     parser.add_argument('output_bam',
                         help="path to output BAM")
-    parser.add_argument("--include_unmatched",
+    parser.add_argument("--preserve_all_alignments",
                         action="store_true",
                         help=("Preserve all incoming alignments (even if they"
-                              "cannot be matched with primers"))
+                              "are unmapped, cannot be matched with primers,"
+                              "result in invalid CIGARs, etc."))
     args = parser.parse_args(arguments)
     return args
 
@@ -191,12 +206,13 @@ def main(command_line_args=None):
         input_bamfile = pysam.AlignmentFile(args.input_bam,"rb")
         aligned_segment_iter = input_bamfile.fetch()
         read_iter = Read.iter(aligned_segment_iter)
-        read_transformations = _build_read_transformations(read_iter)
+        read_transformations = _build_read_transformations(read_iter,
+                                                            _filter_builder)
 
         _log("Writing transformed alignments to [{}]", args.output_bam)
         handlers = _build_handlers(args.input_bam,
                                    args.output_bam,
-                                   args.include_unmatched)
+                                   args.preserve_all_alignments)
         aligned_segment_iter = input_bamfile.fetch()
         read_iter = Read.iter(aligned_segment_iter)
         _handle_reads(handlers, read_iter, read_transformations)

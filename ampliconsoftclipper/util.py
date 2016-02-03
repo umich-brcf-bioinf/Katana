@@ -187,7 +187,7 @@ class PrimerPair(object):
     '''Sense start and antisense regions should be start and end (inclusive and
     exclusive respectively), zero-based, positive genomic index.'''
     _all_primers = {}
-    NULL_PRIMER_PAIR = _NullPrimerPair()
+    NULL = _NullPrimerPair()
 
     def __init__(self,
                  target_id,
@@ -231,7 +231,7 @@ class PrimerPair(object):
             primer_pair = PrimerPair._all_primers[read_key]
             return primer_pair
         except KeyError:
-            return PrimerPair.NULL_PRIMER_PAIR
+            return PrimerPair.NULL
 
     @property
     def is_unmatched(self):
@@ -241,3 +241,52 @@ class PrimerPair(object):
     def softclip_primers(self, old_cigar):
         return old_cigar.softclip_target(self._query_region_start,
                                          self._query_region_end)
+
+class _NullReadTransformation(object):
+    def __init__(self):
+        self.is_paired = False
+        self.is_unmapped = False
+        self.primer_pair = PrimerPair.NULL
+        self.reference_start = 0
+        self.cigar = ""
+        self.is_cigar_valid = False
+        self.filters=("NULL",)
+
+
+class ReadTransformation(object):
+    '''Lightweight container for changes to be made to a read.'''
+
+    NULL = _NullReadTransformation()
+
+    def __init__(self,
+                 read,
+                 primer_pair,
+                 new_cigar,
+                 filter_builder=None):
+        self.is_paired = read.is_paired
+        self.is_unmapped = read.is_unmapped
+        self.primer_pair = primer_pair
+        self.reference_start = new_cigar.reference_start
+        self.cigar = new_cigar.cigar
+        self.is_cigar_valid = new_cigar.is_valid
+        if filter_builder == None:
+            self.filters = ()
+        else:
+            self.filters = tuple(filter_builder(self))
+
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
+
+    def __repr__(self):
+        return ("{}("
+                "primer_pair={}, "
+                "reference_start={}, "
+                "cigar='{}', "
+                "is_paired={}, "
+                "filters={})").format(self.__class__,
+                                      self.primer_pair.target_id,
+                                      self.reference_start,
+                                      self.cigar,
+                                      self.is_paired,
+                                      self.filters)
+

@@ -2,8 +2,11 @@
 from __future__ import print_function, absolute_import
 from ampliconsoftclipper import clipper
 from ampliconsoftclipper import readhandler
-from test.util_test import ClipperBaseTestCase, MockRead, MockReadHandler
-import ampliconsoftclipper.util
+from test.util_test import ClipperBaseTestCase, MockPrimerPair, MockRead, \
+        MockReadHandler, MockCigarUtil, MicroMock
+import ampliconsoftclipper.util as util
+from ampliconsoftclipper.util import ReadTransformation
+from ampliconsoftclipper.clipper import _build_read_transformations
 try:
     from StringIO import StringIO
 except ImportError:
@@ -17,9 +20,9 @@ class ClipperTestCase(ClipperBaseTestCase):
                                                   False)
         actual_handler_classes = [x.__class__ for x in actual_handlers]
         self.assertEquals([readhandler.StatsHandler,
-                           readhandler.ExcludeNonMatchedReadHandler,
                            readhandler.AddTagsReadHandler,
                            readhandler.TransformReadHandler,
+                           readhandler.ExcludeNonMatchedReadHandler,
                            readhandler.WriteReadHandler],
                           actual_handler_classes)
 
@@ -34,6 +37,45 @@ class ClipperTestCase(ClipperBaseTestCase):
                            readhandler.WriteReadHandler],
                           actual_handler_classes)
 
+    def test_filter_builder_noFilters(self):
+        transform = MicroMock(primer_pair=MockPrimerPair(is_unmatched=False),
+                              is_unmapped=False,
+                              is_cigar_valid=True)
+        self.assertEquals([], clipper._filter_builder(transform))
+
+    def test_filter_builder_unmatchedPrimerPair(self):
+        transform = MicroMock(primer_pair=MockPrimerPair(is_unmatched=True),
+                              is_unmapped=False,
+                              is_cigar_valid=True)
+        self.assertEquals(["UNMATCHED_PRIMER_PAIR"],
+                          clipper._filter_builder(transform))
+
+    def test_filter_builder_unmappedAlignment(self):
+        transform = MicroMock(primer_pair=MockPrimerPair(is_unmatched=False),
+                              is_unmapped=True,
+                              is_cigar_valid=True)
+        self.assertEquals(["UNMAPPED_ALIGNMENT"],
+                          clipper._filter_builder(transform))
+
+    def test_filter_builder_invalidCigar(self):
+        transform = MicroMock(primer_pair=MockPrimerPair(is_unmatched=False),
+                              is_unmapped=False,
+                              is_cigar_valid=False)
+        self.assertEquals(["INVALID_CIGAR"],
+                          clipper._filter_builder(transform))
+
+    def test_filter_builder_multiple(self):
+        transform = MicroMock(primer_pair=MockPrimerPair(is_unmatched=True),
+                              is_unmapped=False,
+                              is_cigar_valid=False)
+        self.assertEquals(["UNMATCHED_PRIMER_PAIR","INVALID_CIGAR"],
+                          clipper._filter_builder(transform))
+        transform = MicroMock(primer_pair=MockPrimerPair(is_unmatched=True),
+                              is_unmapped=True,
+                              is_cigar_valid=False)
+        self.assertEquals(["UNMAPPED_ALIGNMENT"],
+                          clipper._filter_builder(transform))
+
     def test_build_read_transformations(self):
         primer_pair = clipper.PrimerPair(target_id="target_1",
                                          chrom="chr42",
@@ -45,6 +87,8 @@ class ClipperTestCase(ClipperBaseTestCase):
                         reference_start=100,
                         reference_end=150,
                         cigarstring="10M",
+                        is_paired=True,
+                        is_unmapped=False,
                         key=111)
         read2 = MockRead(query_name="read2-antisense",
                         is_positive_strand=False,
@@ -52,6 +96,8 @@ class ClipperTestCase(ClipperBaseTestCase):
                         reference_start=140,
                         reference_end=150,
                         cigarstring="10M",
+                        is_paired=False,
+                        is_unmapped=False,
                         key=222)
         read3 = MockRead(query_name="read3",
                         is_positive_strand=True,
@@ -59,19 +105,80 @@ class ClipperTestCase(ClipperBaseTestCase):
                         reference_start=333,
                         reference_end=343,
                         cigarstring="10M",
+                        is_paired=True,
+                        is_unmapped=False,
                         key=333)
+        filter_builder = lambda transform: []
 
         read_iter = iter([read1, read2, read3])
-        actual_read_transforms = clipper._build_read_transformations(read_iter)
+        actual_read_transforms = _build_read_transformations(read_iter,
+                                                             filter_builder)
         self.assertEquals(3, len(actual_read_transforms))
-        self.assertEquals((primer_pair, 102, "2S8M"),
+        filter_builder=lambda x: []
+        transform1 = ReadTransformation(read1,
+                                        primer_pair,
+                                        MockCigarUtil(reference_start=102,
+                                                      cigar="2S8M"),
+                                        filter_builder)
+        transform2 = ReadTransformation(read2,
+                                        primer_pair,
+                                        MockCigarUtil(reference_start=140,
+                                                      cigar="8M2S"),
+                                        filter_builder)
+        transform3 = ReadTransformation(read3,
+                                        clipper.PrimerPair.NULL,
+                                        MockCigarUtil(reference_start=333,
+                                                      cigar="10M"),
+                                        filter_builder)
+        self.assertEquals(transform1,
                           actual_read_transforms[111])
-        self.assertEquals((primer_pair, 140, "8M2S"),
+        self.assertEquals(transform2,
                           actual_read_transforms[222])
-        self.assertEquals((clipper.PrimerPair.NULL_PRIMER_PAIR, 333, "10M"),
+        self.assertEquals(transform3,
                           actual_read_transforms[333])
 
-    def test_build_read_transformations_reraisesExceptions(self):
+    def test_build_read_transformations2_addsFilters(self):
+        clipper.PrimerPair(target_id="target_1",
+                           chrom="chr42",
+                           sense_primer_region=(100,102),
+                           antisense_primer_region=(148,150))
+        clipper.PrimerPair(target_id="target_2",
+                           chrom="chr42",
+                           sense_primer_region=(200,202),
+                           antisense_primer_region=(248,250))
+        read1 = MockRead(query_name="readA",
+                        is_positive_strand=True,
+                        reference_name="chr42",
+                        reference_start=100,
+                        reference_end=150,
+                        cigarstring="50M",
+                        is_paired=True,
+                        is_unmapped=False,
+                        key=111)
+        read2 = MockRead(query_name="readB",
+                        is_positive_strand=False,
+                        reference_name="chr42",
+                        reference_start=200,
+                        reference_end=250,
+                        cigarstring="50M",
+                        is_paired=False,
+                        is_unmapped=False,
+                        key=222)
+        read_iter = iter([read1, read2])
+        filter_builder = lambda transform: [str(transform.reference_start),
+                                            transform.primer_pair.target_id]
+
+        actual_read_transforms = _build_read_transformations(read_iter,
+                                                             filter_builder)
+        self.assertEquals(2, len(actual_read_transforms))
+        self.assertEquals(("102", "target_1"),
+                          actual_read_transforms[111].filters)
+        self.assertEquals(("202", "target_2"),
+                          actual_read_transforms[222].filters)
+
+
+
+    def test_build_read_transformations2_reraisesExceptions(self):
         clipper.PrimerPair(target_id="target_1",
                            chrom="chr42",
                            sense_primer_region=(100,102),
@@ -82,17 +189,20 @@ class ClipperTestCase(ClipperBaseTestCase):
                         reference_start=100,
                         reference_end=150,
                         cigarstring="10M",
+                        is_paired=True,
+                        is_unmapped=False,
                         key=111)
         read2 = MockRead(query_name="readB-antisense",
                         key=222)
-
         read_iter = iter([read1, read2])
+        filter_builder = lambda transform: []
 
-        self.assertRaisesRegexp(ampliconsoftclipper.util.ClipperException,
+        self.assertRaisesRegexp(util.ClipperException,
                                 (r"Problem with read readB-antisense "
                                  r"\[line 2\] and primer pair target_1: .*"),
                                 clipper._build_read_transformations,
-                                read_iter)
+                                read_iter,
+                                filter_builder)
 
     def test_handle_reads(self):
         handler1 = MockReadHandler()
@@ -186,8 +296,7 @@ class ClipperTestCase(ClipperBaseTestCase):
         actual_calls = handler1.handle_calls[0]
         self.assertEquals(read1, actual_calls[0])
         self.assertEquals(transform1, actual_calls[1])
-        null_transform = (clipper.PrimerPair.NULL_PRIMER_PAIR, 0, "")
-        self.assertEquals(null_transform, actual_calls[2])
+        self.assertEquals(ReadTransformation.NULL, actual_calls[2])
 
         self.assertEquals(1, handler1.end_calls)
 

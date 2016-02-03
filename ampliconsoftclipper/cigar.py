@@ -13,6 +13,7 @@ class CigarUtil(object):
     _REGEX_MATCHING_OP = re.compile("[MX=]")
     _REGEX_NON_HARDCLIP = re.compile("[^H]")
     _REGEX_REF_CONSUMING = re.compile("[MDNS=X]")
+    _REGEX_REQUIRED_OPS = re.compile("[MIDN=X]")
     _REGEX_QUERY_CONSUMING = re.compile("[MIS=X]")
     _REGEX_QUERY_NON_CONSUMING = re.compile("[DNP]") #Preserve H?
 
@@ -20,7 +21,6 @@ class CigarUtil(object):
         self.reference_start = reference_start
         self.cigar = ""
         self.cigar_profile = ""
-
         if cigar:
             self.cigar = cigar
         elif cigar_profile:
@@ -29,8 +29,9 @@ class CigarUtil(object):
             self.cigar_profile = cigar_profile
         else:
             self.cigar_profile = self._expand_cigar(self.cigar)
-
-        self.query_length = len(self._REGEX_QUERY_CONSUMING.findall(self.cigar_profile))
+        self.query_length = \
+                len(self._REGEX_QUERY_CONSUMING.findall(self.cigar_profile))
+        self.is_valid = self._REGEX_REQUIRED_OPS.search(self.cigar) is not None
 
     def __repr__(self):
         return ("{}(reference_start={}, "
@@ -161,8 +162,10 @@ class CigarUtil(object):
 class NullCigarUtil(object):
 #pylint: disable=unused-argument
     def __init__(self, reference_start):
-        self.cigar = "*"
         self.reference_start = reference_start
+        self.cigar = "*"
+        self.is_valid = True
+        self.query_length = 0
 
     def softclip_target(self, target_start, target_end):
         return self

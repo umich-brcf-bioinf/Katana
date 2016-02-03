@@ -3,30 +3,15 @@ from __future__ import print_function, absolute_import
 from ampliconsoftclipper import util
 import unittest
 import sys
+from ampliconsoftclipper.util import ReadTransformation
 try:
     from StringIO import StringIO
 except ImportError:
     from io import StringIO
 
-
-class ClipperBaseTestCase(unittest.TestCase):
-    def setUp(self):
-        util.PrimerPair._all_primers = {}
-        unittest.TestCase.setUp(self)
-        self.stderr = StringIO()
-        self.saved_stderr = sys.stderr
-        sys.stderr = self.stderr
-
-    def tearDown(self):
-        self.stderr.close()
-        sys.stderr = self.saved_stderr
-        unittest.TestCase.tearDown(self)
-
-
 class MicroMock(object):
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
-
 
 class MockLog(object):
     def __init__(self):
@@ -58,6 +43,9 @@ class MockCigarUtil(MicroMock):
     def __init__(self, **kwargs):
         self._softclip_targets_calls=[]
         self._softclip_target_return = None
+        self.reference_start=100
+        self.cigar="10M"
+        self.is_valid=True
         super(MockCigarUtil, self).__init__(**kwargs)
 
     def softclip_target(self, target_start, target_end):
@@ -100,6 +88,19 @@ class MockPrimerPair(MicroMock):
         self._softclip_primers_calls.append(old_cigar)
         return self._softclip_primers_return
 
+
+class ClipperBaseTestCase(unittest.TestCase):
+    def setUp(self):
+        util.PrimerPair._all_primers = {}
+        unittest.TestCase.setUp(self)
+        self.stderr = StringIO()
+        self.saved_stderr = sys.stderr
+        sys.stderr = self.stderr
+
+    def tearDown(self):
+        self.stderr.close()
+        sys.stderr = self.saved_stderr
+        unittest.TestCase.tearDown(self)
 
 
 class PrimerStatsTestCase(ClipperBaseTestCase):
@@ -335,6 +336,79 @@ class ReadTestCase(ClipperBaseTestCase):
         self.assertIsInstance(actual_reads[1], util.Read)
         self.assertEquals(aligned_segment2, actual_reads[1].aligned_segment)
 
+class ReadTransformationTestCase(ClipperBaseTestCase):
+    '''Lightweight container of what we need to update the read.'''
+    def test_init(self):
+        read = MockRead(is_unmapped=False, is_paired=True)
+        new_cigar_util = MockCigarUtil(reference_start=42,
+                                       cigar="10M",
+                                       is_valid=True)
+        mock_primer_pair = MockPrimerPair(is_unmatched=False)
+        filter_builder = lambda x: ["filter1"]
+
+        transform = util.ReadTransformation(read,
+                                            mock_primer_pair,
+                                            new_cigar_util,
+                                            filter_builder)
+        self.assertEquals(mock_primer_pair, transform.primer_pair)
+        self.assertEquals(42, transform.reference_start)
+        self.assertEquals("10M", transform.cigar)
+        self.assertEquals(False, transform.is_unmapped)
+        self.assertEquals(True, transform.is_cigar_valid)
+        self.assertEquals(True, transform.is_paired)
+        self.assertEquals(("filter1",), transform.filters)
+
+    def test_NULL(self):
+        transform = ReadTransformation.NULL
+        self.assertEquals(util.PrimerPair.NULL, transform.primer_pair)
+        self.assertEquals(0, transform.reference_start)
+        self.assertEquals("", transform.cigar)
+        self.assertEquals(False, transform.is_unmapped)
+        self.assertEquals(False, transform.is_cigar_valid)
+        self.assertEquals(False, transform.is_paired)
+        self.assertEquals(("NULL",), transform.filters)
+
+
+    def test_eq(self):
+        read = MockRead(is_unmapped=False, is_paired=True)
+        primer_pair = MockPrimerPair(is_unmatched=False)
+        new_cigar_util = MockCigarUtil()
+        filter_builder = lambda x: ["filter1"]
+        base = util.ReadTransformation(read,
+                                       primer_pair,
+                                       new_cigar_util,
+                                       filter_builder)
+        same = util.ReadTransformation(read,
+                                       primer_pair,
+                                       new_cigar_util,
+                                       filter_builder)
+        self.assertEquals(base, same)
+        read2 = MockRead(is_unmapped=True, is_paired=False)
+        diff_read = util.ReadTransformation(read2,
+                                            primer_pair,
+                                            new_cigar_util,
+                                            filter_builder)
+        self.assertNotEquals(base, diff_read)
+        primer_pair2 = MockPrimerPair(is_unmatched=False)
+        diff_primer = util.ReadTransformation(read,
+                                              primer_pair2,
+                                              new_cigar_util,
+                                              filter_builder)
+        self.assertNotEquals(base, diff_primer)
+        new_cigar_util2 = MockCigarUtil()
+        diff_cigar = util.ReadTransformation(read,
+                                             primer_pair,
+                                             new_cigar_util2,
+                                             filter_builder)
+        self.assertNotEquals(base, diff_cigar)
+        filter_builder2 = lambda x: ["filter2"]
+        diff_filter = util.ReadTransformation(read,
+                                              primer_pair,
+                                              new_cigar_util,
+                                              filter_builder2)
+        self.assertNotEquals(base, diff_filter)
+
+
 class NullPrimerPairTestCase(ClipperBaseTestCase):
     def test_init(self):
         null_primer_pair = util._NullPrimerPair()
@@ -420,8 +494,8 @@ class PrimerPairTestCase(ClipperBaseTestCase):
                                          sense_primer_region=(100,110),
                                          antisense_primer_region=(140,150))
 
-        expected_clipped_cigar = MockCigarUtil(reference_start=42, cigar="75X")
-        mock_cigar = MockCigarUtil(_softclip_target_return=expected_clipped_cigar)
+        expect_clipped_cigar = MockCigarUtil(reference_start=42, cigar="75X")
+        mock_cigar = MockCigarUtil(_softclip_target_return=expect_clipped_cigar)
         actual_clipped_cigar = primer_pair.softclip_primers(mock_cigar)
         self.assertEquals([(110, 140)], mock_cigar._softclip_targets_calls)
-        self.assertEquals(expected_clipped_cigar, actual_clipped_cigar)
+        self.assertEquals(expect_clipped_cigar, actual_clipped_cigar)

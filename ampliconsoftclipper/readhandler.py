@@ -5,7 +5,6 @@ from __future__ import print_function, absolute_import, division
 from collections import defaultdict
 import os
 import pysam
-import re
 
 # I would rather just say pysam.index(...), but since that global is
 # added dynamically, Eclipse flags this as a compilation problem. So
@@ -22,53 +21,38 @@ class _BaseReadHandler(object):
     def end(self):
         pass
 
-
 class AddTagsReadHandler(_BaseReadHandler):
     '''Adds original read values and other explanatory tags.'''
     def handle(self, read, read_transformation, mate_transformation):
-        primer_pair = read_transformation[0]
+        primer_pair = read_transformation.primer_pair
         read.set_tag("X0", primer_pair.target_id, "Z")
         read.set_tag("X1", read.cigarstring, "Z")
         read.set_tag("X2", read.reference_start, "i")
         read.set_tag("X3", read.reference_end, "i")
+        if read_transformation.filters:
+            filter_string = ",".join(read_transformation.filters)
+            read.set_tag("X4", filter_string, "Z")
 
-#TODO: test
-#TODO: Cleanup read vs mate read filtering/unpairing
+
 class ExcludeNonMatchedReadHandler(_BaseReadHandler):
     '''Excludes reads from further processing'''
-    _REF_CONSUMING_REGEX = re.compile("M|I|D|N|=|X")
     _STOP_ITERATION_EXCEPTION = StopIteration()
     def __init__(self, log_method):
         self._log_method = log_method
         self.all_exclusions = defaultdict(int)
 
+    #TODO: test all_exclusions is built correctly
     def handle(self, read, read_transformation, mate_transformation):
-        primer_pair = read_transformation[0]
-        new_cigar = read_transformation[2]
-        mate_primer_pair = mate_transformation[0]
-        mate_new_cigar = mate_transformation[2]
-
-        exclusions = []
-        if primer_pair.is_unmatched:
-            exclusions.append("primer pair is unmatched")
-        if read.is_unmapped:
-            exclusions.append("alignment is unmapped")
-        if not self._REF_CONSUMING_REGEX.search(new_cigar):
-            exclusions.append("all cigar ops clipped")
-        if exclusions:
-            self.all_exclusions[tuple(exclusions)] += 1
+        if mate_transformation.filters: #TODO: test this branch
+            read.is_paired = False
+        if read_transformation.filters:
+            self.all_exclusions[read_transformation.filters] += 1
             raise self._STOP_ITERATION_EXCEPTION
-        elif read.is_paired and mate_primer_pair.is_unmatched:
-            #read.mate_is_mapped = False
-            read.is_paired = False
-        elif read.is_paired and not self._REF_CONSUMING_REGEX.search(mate_new_cigar):
-            read.is_paired = False
-
 
     def end(self):
-        for (exclusion, count) in self.all_exclusions.items():
-            msg = ("EXCLUDE|[{}] alignments were excluded because: {}")
-            self._log_method(msg, count, ",".join(exclusion))
+        for (filters, count) in self.all_exclusions.items():
+            msg = "EXCLUDE|{} alignments were excluded because: {}"
+            self._log_method(msg, count, ",".join(filters))
 
 
 
@@ -80,8 +64,8 @@ class StatsHandler(_BaseReadHandler):
         self._primer_stats_dumper = primer_stats_dumper
 
     def handle(self, read, read_transformation, mate_transformation):
-        primer_pair = read_transformation[0]
-        self._primer_stats.add_read_primer(read, primer_pair)
+        self._primer_stats.add_read_primer(read,
+                                           read_transformation.primer_pair)
 
     def end(self):
         self._primer_stats_dumper.dump(self._primer_stats)
@@ -90,12 +74,10 @@ class StatsHandler(_BaseReadHandler):
 class TransformReadHandler(_BaseReadHandler):
     '''Updates reference_start, cigar string, and mate_reference_start.'''
     def handle(self, read, read_transformation, mate_transformation):
-        (new_reference_start, new_cigar_string) = read_transformation[1:]
-        read.reference_start = new_reference_start
-        read.cigarstring = new_cigar_string
-        (mate_primer_pair, mate_reference_start) = mate_transformation[0:2]
-        if not mate_primer_pair.is_unmatched:
-            read.next_reference_start = mate_reference_start
+        read.reference_start = read_transformation.reference_start
+        read.cigarstring = read_transformation.cigar
+        if read.is_paired and mate_transformation.reference_start: #TODO: test this better
+            read.next_reference_start = mate_transformation.reference_start
 
 
 #TODO: Add PG and CO header lines for tags

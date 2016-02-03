@@ -38,11 +38,8 @@ class AddTagsReadHandlerTestCase(ClipperBaseTestCase):
         primer_pair_target = "target_1"
         primer_pair = MockPrimerPair(target_id=primer_pair_target)
 
-        new_reference_start = 102
-        new_cigar_string = "2S8M"
-        transformation = (primer_pair,
-                          new_reference_start,
-                          new_cigar_string)
+        transformation = MicroMock(primer_pair=primer_pair,
+                                   filters=())
         mate_transformation = None
         handler = readhandler.AddTagsReadHandler()
 
@@ -57,25 +54,38 @@ class AddTagsReadHandlerTestCase(ClipperBaseTestCase):
         self.assertEquals("X3:i:" + str(original_reference_end),
                           read._tags["X3"])
 
+    def test_handle_addsFiltersWhenPresent(self):
+        #pylint: disable=no-member
+        read = MockRead(reference_start=100,
+                        reference_end=110,
+                        cigarstring="10M")
+        primer_pair_target = "target_1"
+        primer_pair = MockPrimerPair(target_id=primer_pair_target)
+
+        transformation = MicroMock(primer_pair=primer_pair,
+                                   filters=("filter1", "filter2"))
+        mate_transformation = None
+        handler = readhandler.AddTagsReadHandler()
+
+        handler.handle(read, transformation, mate_transformation)
+
+        self.assertEquals("X4:Z:" + "filter1,filter2", read._tags["X4"])
 
 class ExcludeReadHandlerTestCase(ClipperBaseTestCase):
-    def test_handle_readAndMateMatchPrimers(self):
-        #pylint: disable=no-member
-        read = MockRead(is_paired=True, mate_is_mapped=True, is_unmapped=False)
-        primer_pair = MockPrimerPair(is_unmatched=False)
-        transformation = (primer_pair, None, "1M")
-        mate_transformation = (primer_pair, None, "1M")
+    def test_handle_noExceptionIfNoFilters(self):
+        read = MockRead()
+        transformation = MicroMock(filters=())
+        mate_transformation = MicroMock(filters=())
         mock_log = MockLog()
         handler = readhandler.ExcludeNonMatchedReadHandler(log_method=mock_log)
         handler.handle(read, transformation, mate_transformation)
-        self.assertEquals(True, read.mate_is_mapped)
+        self.assertEquals(True, True)
 
-    def test_handle_raisesIfUnmatchedPrimer(self):
+    def test_handle_raisesIfTransformHasFilter(self):
         #pylint: disable=no-member
-        read = MockRead(is_paired=True, mate_is_mapped=True, is_unmapped=False)
-        primer_pair = MockPrimerPair(is_unmatched=True)
-        transformation = (primer_pair, None, "1M")
-        mate_transformation = (primer_pair, None, "1M")
+        read = MockRead()
+        transformation = MicroMock(filters=("filterA"))
+        mate_transformation = MicroMock(filters=())
         mock_log = MockLog()
         handler = readhandler.ExcludeNonMatchedReadHandler(log_method=mock_log)
         self.assertRaises(StopIteration,
@@ -84,13 +94,11 @@ class ExcludeReadHandlerTestCase(ClipperBaseTestCase):
                           transformation,
                           mate_transformation)
 
-    def test_handle_unpairsReadIfMateUnmatchedPrimer(self):
+    def test_handle_unpairsReadIfMateHasFilter(self):
         #pylint: disable=no-member
-        read = MockRead(is_paired=True, is_unmapped=False, mate_is_mapped=True)
-        primer_pair = MockPrimerPair(is_unmatched=False)
-        mate_primer_pair = MockPrimerPair(is_unmatched=True)
-        transformation = (primer_pair, None, "1M")
-        mate_transformation = (mate_primer_pair, None, None)
+        read = MockRead()
+        transformation = MicroMock(filters=())
+        mate_transformation = MicroMock(filters=("filterA"))
         mock_log = MockLog()
         handler = readhandler.ExcludeNonMatchedReadHandler(log_method=mock_log)
         handler.handle(read, transformation, mate_transformation)
@@ -106,9 +114,9 @@ class StatsReadHandlerTestCase(ClipperBaseTestCase):
                                      sense_start=242)
         new_reference_start = 102
         new_cigar_string = "2S8M"
-        transformation = (primer_pair,
-                          new_reference_start,
-                          new_cigar_string)
+        transformation = MicroMock(primer_pair=primer_pair,
+                                   reference_start=new_reference_start,
+                                   cigar=new_cigar_string)
         mate_transformation = None
         mock_primer_stats = MockPrimerStats()
         mock_primer_stats_dumper = MockPrimerStatsDumper()
@@ -129,42 +137,41 @@ class StatsReadHandlerTestCase(ClipperBaseTestCase):
 class TransformReadHandlerTestCase(ClipperBaseTestCase):
     def test_handle(self):
         #pylint: disable=no-member
-        read = MockRead(reference_start=100, cigarstring="10M")
-        primer_pair = None
+        read = MockRead(reference_start=100,
+                        cigarstring="10M",
+                        next_reference_start=150,
+                        is_paired = True)
         new_reference_start = 102
         new_cigar_string = "2S8M"
-        transformation = (primer_pair,
-                          new_reference_start,
-                          new_cigar_string)
-        mate_transformation = (MockPrimerPair(is_unmatched=True),
-                               0,
-                               "")
+        new_next_ref_start = 200
+        transformation = MicroMock(primer_pair=None,
+                                   reference_start=new_reference_start,
+                                   cigar=new_cigar_string)
+        mate_transformation = MicroMock(primer_pair=None,
+                                        reference_start=new_next_ref_start,
+                                        ciagr="")
         handler = readhandler.TransformReadHandler()
         handler.handle(read, transformation, mate_transformation)
-        self.assertEquals(102, read.reference_start)
-        self.assertEquals("2S8M", read.cigarstring)
+        self.assertEquals(new_reference_start, read.reference_start)
+        self.assertEquals(new_cigar_string, read.cigarstring)
+        self.assertEquals(new_next_ref_start, read.next_reference_start)
 
-    def test_handle_adjustsMateIfMatchedPrimerPair(self):
+    def test_handle_ignoresMateIfUnpaired(self):
         #pylint: disable=no-member
-        read = MockRead(mate_reference_start=100)
-        transformation = (None, 0, "")
-        mate_transformation = (MockPrimerPair(is_unmatched=False),
-                               222,
-                               "")
+        reference_start = 150
+        read = MockRead(reference_start=100,
+                        cigarstring="10M",
+                        next_reference_start=reference_start,
+                        is_paired = False)
+        new_reference_start = 102
+        new_cigar_string = "2S8M"
+        transformation = MicroMock(primer_pair=None,
+                                   reference_start=new_reference_start,
+                                   cigar=new_cigar_string)
+        mate_transformation = None
         handler = readhandler.TransformReadHandler()
         handler.handle(read, transformation, mate_transformation)
-        self.assertEquals(222, read.next_reference_start)
-
-    def test_handle_ignoresMateIfUnmatchedPrimerPair(self):
-        #pylint: disable=no-member
-        read = MockRead(mate_reference_start=100)
-        transformation = (None, 0, "")
-        mate_transformation = (MockPrimerPair(is_unmatched=True),
-                               222,
-                               "")
-        handler = readhandler.TransformReadHandler()
-        handler.handle(read, transformation, mate_transformation)
-        self.assertEquals(100, read.mate_reference_start)
+        self.assertEquals(reference_start, read.next_reference_start)
 
 
 class WriteReadHandlerTestCase(ClipperBaseTestCase):
