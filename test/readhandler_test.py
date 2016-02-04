@@ -1,6 +1,7 @@
 #pylint: disable=invalid-name, too-few-public-methods, too-many-public-methods
 from __future__ import print_function, absolute_import
 from ampliconsoftclipper import readhandler
+from ampliconsoftclipper.readhandler import ExcludeNonMatchedReadHandler
 import os.path
 import pysam
 from testfixtures.tempdirectory import TempDirectory
@@ -77,7 +78,7 @@ class ExcludeReadHandlerTestCase(ClipperBaseTestCase):
         transformation = MicroMock(filters=())
         mate_transformation = MicroMock(filters=())
         mock_log = MockLog()
-        handler = readhandler.ExcludeNonMatchedReadHandler(log_method=mock_log)
+        handler = ExcludeNonMatchedReadHandler(log_method=mock_log.log)
         handler.handle(read, transformation, mate_transformation)
         self.assertEquals(True, True)
 
@@ -87,12 +88,36 @@ class ExcludeReadHandlerTestCase(ClipperBaseTestCase):
         transformation = MicroMock(filters=("filterA"))
         mate_transformation = MicroMock(filters=())
         mock_log = MockLog()
-        handler = readhandler.ExcludeNonMatchedReadHandler(log_method=mock_log)
+        handler = ExcludeNonMatchedReadHandler(log_method=mock_log.log)
         self.assertRaises(StopIteration,
                           handler.handle,
                           read,
                           transformation,
                           mate_transformation)
+
+    def test_handle_logsExclusions(self):
+        #pylint: disable=no-member
+        read = MockRead()
+        mate_transform = MicroMock(filters=())
+        mock_log = MockLog()
+        handler = ExcludeNonMatchedReadHandler(log_method=mock_log.log)
+        try:
+            handler.handle(read, MicroMock(filters=("filterA")), mate_transform)
+        except StopIteration:
+            pass
+        try:
+            handler.handle(read, MicroMock(filters=("filterA")), mate_transform)
+        except StopIteration:
+            pass
+        try:
+            handler.handle(read, MicroMock(filters=("filterB")), mate_transform)
+        except StopIteration:
+            pass
+        self.assertEquals(2, len(handler._all_exclusions))
+        self.assertEquals(2, handler._all_exclusions["filterA"])
+        self.assertEquals(1, handler._all_exclusions["filterB"])
+        handler.end()
+        self.assertEquals(2, len(mock_log._log_calls))
 
     def test_handle_unpairsReadIfMateHasFilter(self):
         #pylint: disable=no-member
@@ -149,7 +174,8 @@ class TransformReadHandlerTestCase(ClipperBaseTestCase):
                                    cigar=new_cigar_string)
         mate_transformation = MicroMock(primer_pair=None,
                                         reference_start=new_next_ref_start,
-                                        ciagr="")
+                                        ciagr="",
+                                        is_unmapped=False)
         handler = readhandler.TransformReadHandler()
         handler.handle(read, transformation, mate_transformation)
         self.assertEquals(new_reference_start, read.reference_start)
@@ -172,6 +198,24 @@ class TransformReadHandlerTestCase(ClipperBaseTestCase):
         handler = readhandler.TransformReadHandler()
         handler.handle(read, transformation, mate_transformation)
         self.assertEquals(reference_start, read.next_reference_start)
+
+    def test_handle_doesNotResetNextStartIfMateUnmapped(self):
+        #pylint: disable=no-member
+        reference_start = 111
+        original_next_reference_start = 333
+        read = MockRead(reference_start=reference_start,
+                        cigarstring="10M",
+                        next_reference_start=original_next_reference_start,
+                        is_paired = True)
+        new_reference_start = 222
+        transformation = MicroMock(reference_start=new_reference_start,
+                                   cigar="10M")
+        mate_transformation = MicroMock(is_unmapped=True,
+                                        reference_start=333)
+        handler = readhandler.TransformReadHandler()
+        handler.handle(read, transformation, mate_transformation)
+        self.assertEquals(original_next_reference_start,
+                          read.next_reference_start)
 
 
 class WriteReadHandlerTestCase(ClipperBaseTestCase):

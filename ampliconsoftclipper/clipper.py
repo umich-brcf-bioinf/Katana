@@ -34,6 +34,7 @@ import csv
 from datetime import datetime
 import pysam
 import sys
+import time
 import traceback
 
 import ampliconsoftclipper
@@ -91,15 +92,21 @@ def _filter_builder(read_transformation):
             filters.append("INVALID_CIGAR")
     return filters
 
+#TODO: refactor to expedite testing (e.g. clipped_cigar_provider, cached_clipped_cigar_provider)
 def _build_read_transformations(read_iter, filter_builder):
     read_transformations = {}
     read_count = 0
+    cigar_cache={}
     for read in read_iter:
         try:
             read_count += 1
             primer_pair = PrimerPair.get_primer_pair(read)
-            old_cigar = cigar.cigar_factory(read)
-            new_cigar = primer_pair.softclip_primers(old_cigar)
+            key = (primer_pair, read.reference_start, read.cigarstring)
+            if not cigar_cache.get(key):
+                old_cigar = cigar.cigar_factory(read)
+                new_cigar = primer_pair.softclip_primers(old_cigar)
+                cigar_cache[key] = new_cigar
+            new_cigar = cigar_cache[key]
             transform = ReadTransformation(read,
                                            primer_pair,
                                            new_cigar,
@@ -191,6 +198,7 @@ def _parse_command_line_args(arguments):
 def main(command_line_args=None):
     '''Clipper entry point.'''
     try:
+        start_time = time.time()
         if not command_line_args:
             command_line_args = sys.argv
         args = _parse_command_line_args(command_line_args[1:])
@@ -217,7 +225,8 @@ def main(command_line_args=None):
         read_iter = Read.iter(aligned_segment_iter)
         _handle_reads(handlers, read_iter, read_transformations)
 
-        _log("Done")
+        elapsed_time = time.time() - start_time
+        _log("Done ({} seconds)", int(elapsed_time))
     except _ClipperUsageError as usage_error:
         message = "clipper usage problem: {}".format(str(usage_error))
         print(message, file=sys.stderr)
@@ -236,6 +245,6 @@ def main(command_line_args=None):
 
 
 if __name__ == '__main__':
-    #import cProfile
-    #cProfile.run('main()')
-    main(sys.argv)
+     import cProfile
+     cProfile.run('main()')
+#    main(sys.argv)

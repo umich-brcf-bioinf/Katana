@@ -78,7 +78,6 @@ class CigarUtil(object):
         new_cigar = [str(len(op)) + op[0] for op in op_strings]
         return "".join(new_cigar)
 
-    #TODO: lazy init property
     def _pos_profiles(self, profile):
         '''Returns a list of tuple of first match index and a list of profiles.
         Each list element is the cigar profile for that reference position; i.e.
@@ -170,7 +169,7 @@ class NullCigarUtil(object):
     def softclip_target(self, target_start, target_end):
         return self
 
-#TODO: consider caching CigarUtils
+
 def cigar_factory(read):
     if not read.cigarstring or read.cigarstring == "*":
         return NullCigarUtil(read.reference_start)

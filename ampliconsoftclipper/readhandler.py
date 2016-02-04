@@ -21,6 +21,7 @@ class _BaseReadHandler(object):
     def end(self):
         pass
 
+
 class AddTagsReadHandler(_BaseReadHandler):
     '''Adds original read values and other explanatory tags.'''
     def handle(self, read, read_transformation, mate_transformation):
@@ -39,21 +40,19 @@ class ExcludeNonMatchedReadHandler(_BaseReadHandler):
     _STOP_ITERATION_EXCEPTION = StopIteration()
     def __init__(self, log_method):
         self._log_method = log_method
-        self.all_exclusions = defaultdict(int)
+        self._all_exclusions = defaultdict(int)
 
-    #TODO: test all_exclusions is built correctly
     def handle(self, read, read_transformation, mate_transformation):
-        if mate_transformation.filters: #TODO: test this branch
+        if mate_transformation.filters:
             read.is_paired = False
         if read_transformation.filters:
-            self.all_exclusions[read_transformation.filters] += 1
+            self._all_exclusions[read_transformation.filters] += 1
             raise self._STOP_ITERATION_EXCEPTION
 
     def end(self):
-        for (filters, count) in self.all_exclusions.items():
+        for (filters, count) in self._all_exclusions.items():
             msg = "EXCLUDE|{} alignments were excluded because: {}"
             self._log_method(msg, count, ",".join(filters))
-
 
 
 class StatsHandler(_BaseReadHandler):
@@ -76,7 +75,7 @@ class TransformReadHandler(_BaseReadHandler):
     def handle(self, read, read_transformation, mate_transformation):
         read.reference_start = read_transformation.reference_start
         read.cigarstring = read_transformation.cigar
-        if read.is_paired and mate_transformation.reference_start: #TODO: test this better
+        if read.is_paired and not mate_transformation.is_unmapped:
             read.next_reference_start = mate_transformation.reference_start
 
 
