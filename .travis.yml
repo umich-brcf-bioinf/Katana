@@ -1,0 +1,23 @@
+#cgates: 2/4/2016
+
+language: python
+python:
+    - "2.7"
+
+install:
+    - pip install -r requirements.txt
+ 
+before_script:
+    - pip install coverage
+    - pip install coveralls
+
+script: 
+    - nosetests --with-coverage --verbose --cover-package=ampliconsoftclipper
+    - nosetests examples
+
+after_success:
+    - coveralls
+
+notifications:
+    email:
+        - cgates@umich.edu

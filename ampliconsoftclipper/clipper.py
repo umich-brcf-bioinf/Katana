@@ -2,16 +2,12 @@
 """Softclips primers at edge of aligned reads based on primer locations; emits
 new BAM file with clipped reads optionally excluding alignments that did not
 match primer locations."""
-#TODO: Add TODO file
 #TODO: elaborate module doc
+#TODO: see TODO.rst
 #TODO: Add README.rst
-#TODO: Add ability to parse Illumna primer files
-#TODO: Emit primer bed file
 #TODO: Add to travis
 #TODO: Test in Py3
 #TODO: Add to PyPI
-#TODO: Profile and improve performance
-#TODO: Adjust to work with pysam 0.8.5
 
 ##   Copyright 2014 Bioinformatics Core, University of Michigan
 ##
@@ -33,6 +29,7 @@ import argparse
 import csv
 from datetime import datetime
 import pysam
+import resource
 import sys
 import time
 import traceback
@@ -190,11 +187,15 @@ def _parse_command_line_args(arguments):
     args = parser.parse_args(arguments)
     return args
 
-#TODO: correctly process pairs at same coordinate where one is unmapped
+def _peak_memory():
+    peak_memory = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    peak_memory_mb = peak_memory/1024
+    if sys.platform == 'darwin':
+        peak_memory_mb /= 1024
+    return int(peak_memory_mb)
+
+
 #TODO: test
-#TODO: deal if input bam missing index
-#TODO: deal if input bam regions disjoint with primer regions
-#TODO: warn/stop if less than 5% reads transformed
 def main(command_line_args=None):
     '''Clipper entry point.'''
     try:
@@ -225,8 +226,10 @@ def main(command_line_args=None):
         read_iter = Read.iter(aligned_segment_iter)
         _handle_reads(handlers, read_iter, read_transformations)
 
-        elapsed_time = time.time() - start_time
-        _log("Done ({} seconds)", int(elapsed_time))
+        elapsed_time = int(time.time() - start_time)
+        _log("Done ({} seconds, {}mb peak memory)",
+             elapsed_time,
+             _peak_memory())
     except _ClipperUsageError as usage_error:
         message = "clipper usage problem: {}".format(str(usage_error))
         print(message, file=sys.stderr)
@@ -245,6 +248,6 @@ def main(command_line_args=None):
 
 
 if __name__ == '__main__':
-     import cProfile
-     cProfile.run('main()')
-#    main(sys.argv)
+    #import cProfile
+    #cProfile.run('main()')
+    main(sys.argv)
