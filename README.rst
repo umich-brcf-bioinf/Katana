@@ -1,6 +1,6 @@
-=================== 
-AmpliconSoftClipper
-===================
+======
+Katana
+======
 
 Command-line tool to soft-clip reads based on primer locations as specified from Thunderbolt manifest.
 
@@ -14,7 +14,7 @@ Command-line tool to soft-clip reads based on primer locations as specified from
 
 The official repository is at:
 
-https://github.com/umich-brcf-bioinf/AmpliconSoftClipper
+https://github.com/umich-brcf-bioinf/Katana
 
 ----------
 Quickstart

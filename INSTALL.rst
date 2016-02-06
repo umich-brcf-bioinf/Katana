@@ -1,6 +1,10 @@
 Installing AmpliconSoftClipper
 ==================
-AmpliconSoftClipper has been tested with Python 2.7 on OSX and \*nix.
+AmpliconSoftClipper has been tested with:
+
+* Python 2.7 and 3.4
+* pysam 0.8.3, 0.8.4
+* OSX and \*nix
 
 Prerequisites
 -------------
@@ -15,20 +19,20 @@ Installing
 ----------
 You can install from source from github:
 
-``$ pip install git+https://github.com/umich-brcf-bioinf/AmpliconSoftClipper``
+``$ pip install git+https://github.com/umich-brcf-bioinf/Katana``
 
 If you don't have root permissions, you can install locally:
 
-``$ pip install git+https://github.com/umich-brcf-bioinf/AmpliconSoftClipper --user``
+``$ pip install git+https://github.com/umich-brcf-bioinf/Katana --user``
 
 Following the pip install, you may need to adjust your path settings to include home/.local/bin. 
 Then you can execute so:
 
-``$ clipper manifest.txt input.bam output.bam``
+``$ katana primers.txt input.bam output.bam``
 
 If you already have prerequisite modules installed, you can also clone from github and run directly from the source like so:
 
-``$ git clone https://github.com/umich-brcf-bioinf/AmpliconSoftClipper``
+``$ git clone https://github.com/umich-brcf-bioinf/Katana``
 
-``$ AmpliconSoftClipper/clipper-runner.py manifest.txt input.bam output.bam``
+``$ katana/katana-runner.py primers.txt input.bam output.bam``
   
