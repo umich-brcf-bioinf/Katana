@@ -11,6 +11,8 @@ try:
     from StringIO import StringIO
 except ImportError:
     from io import StringIO
+import resource
+import sys
 
 
 class ClipperTestCase(ClipperBaseTestCase):
@@ -315,3 +317,28 @@ class ClipperTestCase(ClipperBaseTestCase):
         targets = set([primer.target_id for primer in actual_primers.values()])
         self.assertEquals(set(["IDH1_1", "NRAS_3"]), targets)
 
+
+    def test_peak_memory(self):
+        resource_getrusage_orig = resource.getrusage
+        sys_platform_orig = sys.platform
+        try:
+            sys.platform = "darwin"
+            resource.getrusage = lambda x: MicroMock(ru_maxrss=4200000)
+            self.assertEquals(4, clipper._peak_memory())
+
+            sys.platform = "linux"
+            resource.getrusage = lambda x: MicroMock(ru_maxrss=4200)
+            self.assertEquals(4, clipper._peak_memory())
+        finally:
+            resource.getrusage = resource_getrusage_orig
+            sys.platform = sys_platform_orig
+
+
+    def test_parse_command_line_args(self):
+        namespace = clipper._parse_command_line_args(["primers.txt",
+                                                      "input.bam",
+                                                      "output.bam"])
+        self.assertEquals("primers.txt", namespace.primer_manifest)
+        self.assertEquals("input.bam", namespace.input_bam)
+        self.assertEquals("output.bam", namespace.output_bam)
+        self.assertEquals(False, namespace.preserve_all_alignments)

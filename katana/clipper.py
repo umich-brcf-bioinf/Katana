@@ -4,7 +4,6 @@ new BAM file with clipped reads optionally excluding alignments that did not
 match primer locations."""
 #TODO: elaborate module doc
 #TODO: see TODO.rst
-#TODO: Test in Py3
 #TODO: Add to PyPI
 
 ##   Copyright 2014 Bioinformatics Core, University of Michigan
@@ -51,18 +50,18 @@ is conceptually similar to clipping the primers from the FASTQ reads but
 preserves the primers during alignment to improve alignment quality.
 '''
 
-class _ClipperUsageError(Exception):
+class _KatanaUsageError(Exception):
     """Raised for malformed command or invalid arguments."""
     def __init__(self, msg, *args):
-        super(_ClipperUsageError, self).__init__(msg, *args)
+        super(_KatanaUsageError, self).__init__(msg, *args)
 
 
-class _ClipperArgumentParser(argparse.ArgumentParser):
+class _KatanaArgumentParser(argparse.ArgumentParser):
     """Argument parser that raises UsageError instead of exiting."""
     #pylint: disable=too-few-public-methods
     def error(self, message):
         '''Suppress default exit behavior'''
-        raise _ClipperUsageError(message)
+        raise _KatanaUsageError(message)
 
 
 #TODO: make this a logger object that writes to file and console and
@@ -87,7 +86,8 @@ def _filter_builder(read_transformation):
             filters.append("INVALID_CIGAR")
     return filters
 
-#TODO: refactor to expedite testing (e.g. clipped_cigar_provider, cached_clipped_cigar_provider)
+#TODO: refactor to expedite testing (e.g. clipped_cigar_provider,
+#  cached_clipped_cigar_provider)
 def _build_read_transformations(read_iter, filter_builder):
     read_transformations = {}
     read_count = 0
@@ -160,11 +160,10 @@ def _build_handlers(input_bam_filename,
         handlers.remove(exclude)
     return handlers
 
-#TODO: test
 def _parse_command_line_args(arguments):
-    parser = _ClipperArgumentParser( \
+    parser = _KatanaArgumentParser( \
         formatter_class=argparse.RawTextHelpFormatter,
-        usage="clipper primer_manifest input_bam output_bam",
+        usage="katana primer_manifest input_bam output_bam",
         description=(DESCRIPTION))
 
     parser.add_argument("-V",
@@ -195,7 +194,7 @@ def _peak_memory():
 
 #TODO: test
 def main(command_line_args=None):
-    '''Clipper entry point.'''
+    '''Katana entry point.'''
     try:
         start_time = time.time()
         if not command_line_args:
@@ -228,7 +227,7 @@ def main(command_line_args=None):
         _log("Done ({} seconds, {}mb peak memory)",
              elapsed_time,
              _peak_memory())
-    except _ClipperUsageError as usage_error:
+    except _KatanaUsageError as usage_error:
         message = "clipper usage problem: {}".format(str(usage_error))
         print(message, file=sys.stderr)
         print("See 'clipper --help'.", file=sys.stderr)
