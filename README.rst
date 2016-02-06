@@ -8,8 +8,8 @@ Command-line tool to soft-clip reads based on primer locations as specified from
     :target: https://travis-ci.org/umich-brcf-bioinf/Katana
     :alt: Build Status
 
-.. image:: https://coveralls.io/repos/umich-brcf-bioinf/Katana/badge.png?branch=develop
-    :target: https://coveralls.io/r/umich-brcf-bioinf/Katana?branch=develop
+.. image:: https://coveralls.io/repos/github/umich-brcf-bioinf/Katana/badge.svg?branch=develop
+    :target: https://coveralls.io/github/umich-brcf-bioinf/Katana?branch=develop
     :alt: Coverage Status
 
 The official repository is at:
