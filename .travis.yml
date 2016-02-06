@@ -9,8 +9,8 @@ env:
     PYSAM_VERSION=0.8.4
 
 install:
-    - pip install -q pyam=$PYSAM_VERSION
-    - pip install -r requirements.txt
+    - pip install -q pysam==$PYSAM_VERSION
+    - pip install -q -r requirements.txt
  
 before_script:
     - pip install coverage
