@@ -2,7 +2,7 @@ Future Directions
 =================
 - Add quickstart text in README
 - Add support for Py3
-- Add for pysam 0.8.5
+- Add support for pysam 0.8.3, 0.8.5
 - Extend to recognize and support primer files other than Thunderbolt
 - Improve primer file validation
 - Save log

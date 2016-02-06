@@ -2,9 +2,12 @@
 #TODO: elaborate module doc
 from __future__ import print_function, absolute_import, division
 from collections import defaultdict
-import itertools
 import natsort
 
+try:
+    from itertools import izip
+except ImportError:  #python3.x
+    izip = zip
 
 class ClipperException(Exception):
     """Flagging cases that we can not process at this time."""
@@ -49,7 +52,7 @@ class PrimerStats(object):
                   self._primer_stats[primer_pair, True],
                   self._primer_stats[primer_pair, False],
                   self._sense_percent(primer_pair)]
-        return dict(itertools.izip(PrimerStats.STAT_KEYS, values))
+        return dict(izip(PrimerStats.STAT_KEYS, values))
 
 
 #TODO: Extend log method to emit subset to screen and full set to file
@@ -70,8 +73,9 @@ class PrimerStatsDumper(object):
 #TODO: sort methods
 class Read(object):
     '''Lightweight wrapper around AlignedSegment'''
-    def __init__(self, aligned_segment):
+    def __init__(self, aligned_segment, input_bamfile):
         self.aligned_segment = aligned_segment
+        self.input_bamfile = input_bamfile
 
     @property
     def is_positive_strand(self):
@@ -82,14 +86,14 @@ class Read(object):
         if not mate:
             key= (self.aligned_segment.query_name,
                   self.is_positive_strand,
-                  self.aligned_segment.reference_name,
+                  self.input_bamfile.getrname(self.aligned_segment.reference_id),
                   self.aligned_segment.reference_start,
                   self.aligned_segment.is_read1)
         elif self.aligned_segment.is_paired and \
                 (not self.aligned_segment.mate_is_unmapped):
             key = (self.aligned_segment.query_name,
                    not self.aligned_segment.mate_is_reverse,
-                   self.aligned_segment.next_reference_name,
+                   self.input_bamfile.getrname(self.aligned_segment.next_reference_id),
                    self.aligned_segment.next_reference_start,
                    not self.aligned_segment.is_read1)
         return key
@@ -137,7 +141,8 @@ class Read(object):
 
     @property
     def reference_name(self):
-        return self.aligned_segment.reference_name
+        return self.input_bamfile.getrname(self.aligned_segment.reference_id)
+#        return self.aligned_segment.rname
 
     @property
     def reference_start(self):
@@ -163,9 +168,9 @@ class Read(object):
         self.aligned_segment.set_tag(tag_name, tag_value, tag_type)
 
     @staticmethod
-    def iter(aligned_segment_iter):
+    def iter(aligned_segment_iter, input_bamfile):
         for aligned_segment in aligned_segment_iter:
-            yield Read(aligned_segment)
+            yield Read(aligned_segment, input_bamfile)
 
 class _NullPrimerPair(object):
     #pylint: disable=too-few-public-methods

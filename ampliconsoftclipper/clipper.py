@@ -4,8 +4,6 @@ new BAM file with clipped reads optionally excluding alignments that did not
 match primer locations."""
 #TODO: elaborate module doc
 #TODO: see TODO.rst
-#TODO: Add README.rst
-#TODO: Add to travis
 #TODO: Test in Py3
 #TODO: Add to PyPI
 
@@ -214,7 +212,7 @@ def main(command_line_args=None):
         #pylint: disable=no-member
         input_bamfile = pysam.AlignmentFile(args.input_bam,"rb")
         aligned_segment_iter = input_bamfile.fetch()
-        read_iter = Read.iter(aligned_segment_iter)
+        read_iter = Read.iter(aligned_segment_iter, input_bamfile)
         read_transformations = _build_read_transformations(read_iter,
                                                             _filter_builder)
 
@@ -223,7 +221,7 @@ def main(command_line_args=None):
                                    args.output_bam,
                                    args.preserve_all_alignments)
         aligned_segment_iter = input_bamfile.fetch()
-        read_iter = Read.iter(aligned_segment_iter)
+        read_iter = Read.iter(aligned_segment_iter, input_bamfile)
         _handle_reads(handlers, read_iter, read_transformations)
 
         elapsed_time = int(time.time() - start_time)
@@ -235,7 +233,7 @@ def main(command_line_args=None):
         print(message, file=sys.stderr)
         print("See 'clipper --help'.", file=sys.stderr)
         sys.exit(1)
-    except Exception: #pylint: disable=broad-except
+    except Exception as e: #pylint: disable=broad-except
         _log("ERROR: An unexpected error occurred")
         _log(traceback.format_exc())
         exit(1)

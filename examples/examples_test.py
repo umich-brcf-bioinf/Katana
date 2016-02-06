@@ -47,9 +47,10 @@ class ExamplesFunctionalTest(ClipperBaseTestCase):
                           input_primer_filename,
                           input_bam_filename,
                           output_bam_filename])
+            msg = "{} does not match expected"
             self.assertTrue(filecmp.cmp(expect_bam_filename,
                                         output_bam_filename),
-                            "{} does not match expected".format(output_bam))
+                            msg.format(output_bam))
             self.assertTrue(filecmp.cmp(expect_bai_filename,
                                         output_bai_filename),
-                            "{} does not match expected".format(output_bai))
+                            msg.format(output_bai))

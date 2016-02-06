@@ -9,8 +9,14 @@ import pysam
 # I would rather just say pysam.index(...), but since that global is
 # added dynamically, Eclipse flags this as a compilation problem. So
 # instead we connect directly to the pysam.SamtoolsDispatcher.
-PYSAM_INDEX = pysam.SamtoolsDispatcher("index", None).__call__
-PYSAM_SORT = pysam.SamtoolsDispatcher("sort", None).__call__
+def pysam_index(input_filename):
+    pysam.SamtoolsDispatcher("index", None).__call__(input_filename,
+                                                     catch_stdout=False)
+
+def pysam_sort(input_filename, output_prefix):
+    pysam.SamtoolsDispatcher("sort", None).__call__(input_filename,
+                                                    output_prefix,
+                                                    catch_stdout=False)
 
 
 class _BaseReadHandler(object):
@@ -117,9 +123,9 @@ class WriteReadHandler(_BaseReadHandler):
         self._bamfile = None
         output_root = os.path.splitext(self._output_bam_filename)[0]
         self._log("WRITE_BAM|sorting BAM")
-        PYSAM_SORT(self._tmp_bam_filename, output_root)
+        pysam_sort(self._tmp_bam_filename, output_root)
         self._log("WRITE_BAM|indexing BAM")
-        PYSAM_INDEX(self._output_bam_filename)
+        pysam_index(self._output_bam_filename)
         os.remove(self._tmp_bam_filename)
         self._log("WRITE_BAM|wrote [{}] alignments to [{}]",
                   self._read_count,

@@ -12,6 +12,8 @@ Changelog
 - Adjusted to improve performance (about 6x faster)
 - Added functional tests
 - Added support for travis CI
+- Added support for Python3
+- Added support for pysam 0.8.3
 
 0.1 (1/28/2016)
 --------------

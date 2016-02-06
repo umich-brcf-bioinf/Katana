@@ -230,7 +230,7 @@ class WriteReadHandlerTestCase(ClipperBaseTestCase):
         for read in reads:
             outfile.write(read.aligned_segment)
         outfile.close()
-        readhandler.PYSAM_INDEX(filename)
+        readhandler.pysam_index(filename)
 
     @staticmethod
     def build_read(query_name = "read_28833_29006_6945",
@@ -243,8 +243,7 @@ class WriteReadHandlerTestCase(ClipperBaseTestCase):
                    next_reference_id = 0,
                    next_reference_start=199,
                    template_length=167,
-                   query_qualities = None,
-                   tags = None):
+                   query_qualities = None):
         a = pysam.AlignedSegment()
         a.query_name = query_name
         a.query_sequence = query_sequence
@@ -258,10 +257,7 @@ class WriteReadHandlerTestCase(ClipperBaseTestCase):
         a.next_reference_start = next_reference_start
         a.template_length = template_length
         if query_qualities is None:
-            a.query_qualities = pysam.qualitystring_to_array("<<<<<<<<<<")
-        if tags is None:
-            a.tags = (("NM", 1),
-                      ("RG", "L1"))
+            a.query_qualities = [27] * len(query_sequence)
         return MicroMock(aligned_segment=a)
 
     def test_end_sortsAndIndexes(self):
