@@ -5,8 +5,9 @@ python:
     - "2.7"
     - "3.4"
 env:
-    PYSAM_VERSION=0.8.3
-    PYSAM_VERSION=0.8.4
+    matrix:
+        PYSAM_VERSION=0.8.3
+        PYSAM_VERSION=0.8.4
 
 install:
     - pip install -q pysam==$PYSAM_VERSION
