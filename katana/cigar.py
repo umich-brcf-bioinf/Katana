@@ -3,7 +3,7 @@
 from __future__ import print_function, absolute_import, division
 import itertools
 import re
-import ampliconsoftclipper.util as util
+import katana.util as util
 
 
 class CigarUtil(object):

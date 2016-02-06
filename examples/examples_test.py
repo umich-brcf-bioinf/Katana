@@ -1,4 +1,4 @@
-import ampliconsoftclipper.clipper as clipper
+import katana.clipper as clipper
 import filecmp
 import os
 from testfixtures import TempDirectory

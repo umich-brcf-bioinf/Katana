@@ -1,7 +1,7 @@
 #pylint: disable=invalid-name, too-few-public-methods, too-many-public-methods
 from __future__ import print_function, absolute_import
-from ampliconsoftclipper import readhandler
-from ampliconsoftclipper.readhandler import ExcludeNonMatchedReadHandler
+from katana import readhandler
+from katana.readhandler import ExcludeNonMatchedReadHandler
 import os.path
 import pysam
 from testfixtures.tempdirectory import TempDirectory

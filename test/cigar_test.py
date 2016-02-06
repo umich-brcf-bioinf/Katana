@@ -1,9 +1,9 @@
 #pylint: disable=invalid-name, too-few-public-methods, too-many-public-methods
 from __future__ import print_function, absolute_import
 import unittest
-from ampliconsoftclipper import cigar
+from katana import cigar
 import re
-import ampliconsoftclipper.util
+import katana.util
 from test.util_test import MicroMock
 
 class CigarUtilTestCase(unittest.TestCase):
@@ -16,7 +16,7 @@ class CigarUtilTestCase(unittest.TestCase):
         base._assert_query_lengths_match(subtly_matching)
 
         not_matching = cigar.CigarUtil(42, "2S8M2S")
-        self.assertRaisesRegexp(ampliconsoftclipper.util.ClipperException,
+        self.assertRaisesRegexp(katana.util.ClipperException,
                                r"Old CIGAR query length.*10M.*10.*2S8M2S.*12.*",
                                base._assert_query_lengths_match,
                                not_matching)
@@ -249,7 +249,7 @@ class CigarUtilTestCase(unittest.TestCase):
     def test_softclip_target_validatesLength(self):
         base = cigar.CigarUtil(42, "10M")
         base.query_length = 100
-        self.assertRaises(ampliconsoftclipper.util.ClipperException,
+        self.assertRaises(katana.util.ClipperException,
                           base.softclip_target,
                           44,
                           50)

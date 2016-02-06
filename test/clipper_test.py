@@ -1,12 +1,12 @@
 #pylint: disable=invalid-name, too-few-public-methods, too-many-public-methods
 from __future__ import print_function, absolute_import
-from ampliconsoftclipper import clipper
-from ampliconsoftclipper import readhandler
+from katana import clipper
+from katana import readhandler
 from test.util_test import ClipperBaseTestCase, MockPrimerPair, MockRead, \
         MockReadHandler, MockCigarUtil, MicroMock
-import ampliconsoftclipper.util as util
-from ampliconsoftclipper.util import ReadTransformation
-from ampliconsoftclipper.clipper import _build_read_transformations
+import katana.util as util
+from katana.util import ReadTransformation
+from katana.clipper import _build_read_transformations
 try:
     from StringIO import StringIO
 except ImportError:

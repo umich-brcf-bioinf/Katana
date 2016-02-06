@@ -32,13 +32,13 @@ import sys
 import time
 import traceback
 
-import ampliconsoftclipper
-import ampliconsoftclipper.cigar as cigar
-import ampliconsoftclipper.readhandler as readhandler
-from ampliconsoftclipper.util import ClipperException, PrimerStats,\
+import katana
+import katana.cigar as cigar
+import katana.readhandler as readhandler
+from katana.util import ClipperException, PrimerStats,\
         PrimerStatsDumper, PrimerPair, Read, ReadTransformation
 
-__version__ = ampliconsoftclipper.__version__
+__version__ = katana.__version__
 
 DESCRIPTION=\
 '''Match each alignment in input BAM to primer, softclipping the primer region.
@@ -233,7 +233,7 @@ def main(command_line_args=None):
         print(message, file=sys.stderr)
         print("See 'clipper --help'.", file=sys.stderr)
         sys.exit(1)
-    except Exception as e: #pylint: disable=broad-except
+    except Exception: #pylint: disable=broad-except
         _log("ERROR: An unexpected error occurred")
         _log(traceback.format_exc())
         exit(1)
