@@ -1,8 +1,10 @@
 #pylint: disable=line-too-long
-from setuptools import setup
-from setuptools import find_packages
 import os
+
+from setuptools import find_packages, setup
+
 import katana
+
 
 def read(*paths):
     """Build a file path from *paths* and return the contents."""

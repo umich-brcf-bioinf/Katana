@@ -1,21 +1,28 @@
 #pylint: disable=invalid-name, too-few-public-methods, too-many-public-methods
 from __future__ import print_function, absolute_import
-from katana import clipper
-from katana import readhandler
-from test.util_test import ClipperBaseTestCase, MockPrimerPair, MockRead, \
-        MockReadHandler, MockCigarUtil, MicroMock
-import katana.util as util
-from katana.util import ReadTransformation
+
+import os
+import resource
+import sys
+
+import pysam
+from testfixtures.tempdirectory import TempDirectory
+
+from katana import clipper, readhandler
 from katana.clipper import _build_read_transformations
+from katana.util import ReadTransformation
+import katana.util as util
+from test.util_test import KatanaBaseTestCase, MockPrimerPair, MockRead, \
+    MockReadHandler, MockCigarUtil, MicroMock, build_read, make_bam_file
+
+
 try:
     from StringIO import StringIO
 except ImportError:
     from io import StringIO
-import resource
-import sys
 
 
-class ClipperTestCase(ClipperBaseTestCase):
+class ClipperTestCase(KatanaBaseTestCase):
     def test_build_handlers_excludeUnmatchedReads(self):
         actual_handlers = clipper._build_handlers("input_bam_filename",
                                                   "output_bam_filename",
@@ -199,7 +206,7 @@ class ClipperTestCase(ClipperBaseTestCase):
         read_iter = iter([read1, read2])
         filter_builder = lambda transform: []
 
-        self.assertRaisesRegexp(util.ClipperException,
+        self.assertRaisesRegexp(util.KatanaException,
                                 (r"Problem with read readB-antisense "
                                  r"\[line 2\] and primer pair target_1: .*"),
                                 clipper._build_read_transformations,
@@ -342,3 +349,91 @@ class ClipperTestCase(ClipperBaseTestCase):
         self.assertEquals("input.bam", namespace.input_bam)
         self.assertEquals("output.bam", namespace.output_bam)
         self.assertEquals(False, namespace.preserve_all_alignments)
+
+
+class ClipperFunctionalTestCase(KatanaBaseTestCase):
+    @staticmethod
+    def _create_file(path, filename, contents):
+        filename = os.path.join(path, filename)
+        with open(filename, 'wt') as new_file:
+            new_file.write(contents)
+            new_file.flush()
+        return filename
+    
+    @staticmethod
+    def _bam_to_sam(bam_filename):
+        stdout_orig = sys.stdout
+        try:
+            sys.stdout = sys.__stdout__
+            view = pysam.SamtoolsDispatcher("view", None).__call__
+            return [x for x in view(bam_filename)]
+        finally:
+            sys.stdout = stdout_orig
+
+    def test_main_usageError(self):
+        self.assertRaises(SystemExit,
+                          clipper.main,
+                          ["primers"])
+        self.assertRegexpMatches(self.stderr.getvalue(),
+                                 r"katana usage problem: .*arguments.*")
+
+    def test_main_usageErrorUnexpectedException(self):
+        self.assertRaises(SystemExit,
+                          clipper.main,
+                          ["katana", "foo.txt", "input.bam", "output.bam"])
+        self.assertRegexpMatches(self.stderr.getvalue(),
+                                 r".*No such file or directory: 'foo.txt'.*")
+
+    def test_main(self):
+        primer_file_content = \
+'''Customer TargetID|Chr|Sense Start|Antisense Start|Sense Sequence|Antisense Sequence
+primer1|1|101|200|AAGG|CCTT
+primer2|2|501|600|CGCG|ATAT
+'''.replace("|", "\t")
+        CIGAR_10M = ((0,10),)
+        readA1 = build_read(query_name = "readA",
+                            query_sequence="AGCTTAGCTA",
+                            flag = 99,
+                            reference_id = 0,
+                            reference_start = 100,
+                            cigar = CIGAR_10M,
+                            next_reference_id =0,
+                            next_reference_start=190,
+                            template_length=80)
+        readA2 = build_read(query_name = "readA",
+                            query_sequence="AGCTTAGCTA",
+                            flag = 147,
+                            reference_id = 0,
+                            reference_start = 190,
+                            cigar = CIGAR_10M,
+                            next_reference_id = 0,
+                            next_reference_start=100,
+                            template_length=80)
+        readB1 = build_read(query_name = "readB",
+                            query_sequence="AGCTTAGCTA",
+                            flag = 0,
+                            reference_id = 1,
+                            reference_start = 242,
+                            cigar = CIGAR_10M,
+                            next_reference_id = 0,
+                            next_reference_start=0,
+                            template_length=0)
+
+        with TempDirectory() as input_dir, TempDirectory() as output_dir:
+            input_bam_filename = os.path.join(input_dir.path, "input.bam")
+            output_bam_filename = os.path.join(output_dir.path, "output.bam")
+            input_primers_filename = self._create_file(input_dir.path,
+                                                       'primers.txt',
+                                                       primer_file_content)
+            make_bam_file(input_bam_filename, [readA1, readA2, readB1])
+
+            clipper.main(["katana",
+                          input_primers_filename,
+                          input_bam_filename,
+                          output_bam_filename])
+
+            actual = self._bam_to_sam(output_bam_filename)
+
+        self.assertRegexpMatches(actual[0], "readA.*chr1.*105.*4S6M.*191")
+        self.assertRegexpMatches(actual[1], "readA.*chr1.*191.*6M4S.*105")
+        self.assertEquals(2, len(actual))

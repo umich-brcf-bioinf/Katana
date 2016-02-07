@@ -25,17 +25,19 @@ from __future__ import print_function, absolute_import, division
 import argparse
 import csv
 from datetime import datetime
-import pysam
 import resource
 import sys
 import time
 import traceback
 
+import pysam
+
 import katana
 import katana.cigar as cigar
 import katana.readhandler as readhandler
-from katana.util import ClipperException, PrimerStats,\
-        PrimerStatsDumper, PrimerPair, Read, ReadTransformation
+from katana.util import KatanaException, PrimerStats, PrimerStatsDumper, \
+    PrimerPair, Read, ReadTransformation
+
 
 __version__ = katana.__version__
 
@@ -109,10 +111,10 @@ def _build_read_transformations(read_iter, filter_builder):
             read_transformations[read.key] = transform
         except Exception as exception:
             msg = "Problem with read {} [line {}] and primer pair {}: {}"
-            raise ClipperException(msg.format(read.query_name,
-                                        read_count,
-                                        primer_pair.target_id,
-                                        exception))
+            raise KatanaException(msg.format(read.query_name,
+                                             read_count,
+                                             primer_pair.target_id,
+                                             exception))
     _log("Built transforms for [{}] alignments", read_count)
     return read_transformations
 
@@ -193,6 +195,7 @@ def _peak_memory():
 
 
 #TODO: test
+#TODO: check input files exist
 def main(command_line_args=None):
     '''Katana entry point.'''
     try:
@@ -228,9 +231,9 @@ def main(command_line_args=None):
              elapsed_time,
              _peak_memory())
     except _KatanaUsageError as usage_error:
-        message = "clipper usage problem: {}".format(str(usage_error))
+        message = "katana usage problem: {}".format(str(usage_error))
         print(message, file=sys.stderr)
-        print("See 'clipper --help'.", file=sys.stderr)
+        print("See 'katana --help'.", file=sys.stderr)
         sys.exit(1)
     except Exception: #pylint: disable=broad-except
         _log("ERROR: An unexpected error occurred")

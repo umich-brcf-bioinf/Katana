@@ -1,17 +1,68 @@
 #pylint: disable=invalid-name, too-few-public-methods, too-many-public-methods
 from __future__ import print_function, absolute_import
-from katana import util
-import unittest
+
 import sys
+import unittest
+
+import pysam
+
+from katana import util
 from katana.util import ReadTransformation
+from katana import readhandler
+
 try:
     from StringIO import StringIO
 except ImportError:
     from io import StringIO
 
+
 class MicroMock(object):
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
+
+
+def make_bam_file(filename, reads, header=None):
+    #pylint: disable=no-member,too-many-arguments
+    if header is None:
+        header = { 'HD': {'VN': '1.0'},
+                  'SQ': [{'LN': 1575, 'SN': 'chr1'},
+                         {'LN': 1584, 'SN': 'chr2'}] }
+    outfile = pysam.AlignmentFile(filename, "wb", header=header)
+    for read in reads:
+        outfile.write(read.aligned_segment)
+    outfile.close()
+    readhandler.pysam_index(filename)
+
+def build_read(query_name = "read_28833_29006_6945",
+               query_sequence="AGCTTAGCTA",
+               flag = 99,
+               reference_id = 0,
+               reference_start = 32,
+               mapping_quality = 20,
+               cigar = None,
+               next_reference_id = 0,
+               next_reference_start=199,
+               template_length=167,
+               query_qualities = None):
+    #pylint: disable=no-member,too-many-arguments
+    a = pysam.AlignedSegment()
+    a.query_name = query_name
+    a.query_sequence = query_sequence
+    a.flag = flag
+    a.reference_id = reference_id
+    a.reference_start = reference_start
+    a.mapping_quality = mapping_quality
+    if cigar is None:
+        a.cigar = ((0, len(query_sequence)),)
+    else:
+        a.cigar = cigar
+    a.next_reference_id = next_reference_id
+    a.next_reference_start = next_reference_start
+    a.template_length = template_length
+    if query_qualities is None:
+        a.query_qualities = [27] * len(query_sequence)
+    return MicroMock(aligned_segment=a)
+
 
 class MockLog(object):
     def __init__(self):
@@ -89,7 +140,7 @@ class MockPrimerPair(MicroMock):
         return self._softclip_primers_return
 
 
-class ClipperBaseTestCase(unittest.TestCase):
+class KatanaBaseTestCase(unittest.TestCase):
     def setUp(self):
         util.PrimerPair._all_primers = {}
         unittest.TestCase.setUp(self)
@@ -103,7 +154,7 @@ class ClipperBaseTestCase(unittest.TestCase):
         unittest.TestCase.tearDown(self)
 
 
-class PrimerStatsTestCase(ClipperBaseTestCase):
+class PrimerStatsTestCase(KatanaBaseTestCase):
     def test_stat_keys(self):
         self.assertEquals(6, len(util.PrimerStats.STAT_KEYS))
 
@@ -195,7 +246,7 @@ class PrimerStatsTestCase(ClipperBaseTestCase):
         self.assertEquals(66, stats2["sense_percent"])
 
 
-class PrimerStatsDumperTestCase(ClipperBaseTestCase):
+class PrimerStatsDumperTestCase(KatanaBaseTestCase):
     def test_dump(self):
         mock_log = MockLog()
         dumper = util.PrimerStatsDumper(log_method=mock_log.log)
@@ -218,7 +269,7 @@ class MockAlignmentFile(object):
     def getrname(self, reference_id):
         return self.reference_id_to_name[reference_id]
 
-class ReadTestCase(ClipperBaseTestCase):
+class ReadTestCase(KatanaBaseTestCase):
     def test_init(self):
         mock_alignment_file = MockAlignmentFile({1:"chr1"})
         mock_aligned_segment = MockAlignedSegment(query_name="readA",
@@ -354,7 +405,7 @@ class ReadTestCase(ClipperBaseTestCase):
         self.assertIsInstance(actual_reads[1], util.Read)
         self.assertEquals(aligned_segment2, actual_reads[1].aligned_segment)
 
-class ReadTransformationTestCase(ClipperBaseTestCase):
+class ReadTransformationTestCase(KatanaBaseTestCase):
     '''Lightweight container of what we need to update the read.'''
     def test_init(self):
         read = MockRead(is_unmapped=False, is_paired=True)
@@ -427,7 +478,7 @@ class ReadTransformationTestCase(ClipperBaseTestCase):
         self.assertNotEquals(base, diff_filter)
 
 
-class NullPrimerPairTestCase(ClipperBaseTestCase):
+class NullPrimerPairTestCase(KatanaBaseTestCase):
     def test_init(self):
         null_primer_pair = util._NullPrimerPair()
         old_cigar = MockCigarUtil()
@@ -435,7 +486,7 @@ class NullPrimerPairTestCase(ClipperBaseTestCase):
         self.assertEquals(old_cigar, new_cigar)
         self.assertEquals(True, null_primer_pair.is_unmatched)
 
-class PrimerPairTestCase(ClipperBaseTestCase):
+class PrimerPairTestCase(KatanaBaseTestCase):
     def test_init(self):
         primer_pair = util.PrimerPair(target_id="target_1",
                                          chrom="chr42",

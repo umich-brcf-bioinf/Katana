@@ -4,7 +4,9 @@ from __future__ import print_function, absolute_import, division
 
 from collections import defaultdict
 import os
+
 import pysam
+
 
 # I would rather just say pysam.index(...), but since that global is
 # added dynamically, Eclipse flags this as a compilation problem. So

@@ -1,12 +1,15 @@
-import katana.clipper as clipper
 import filecmp
 import os
+
 from testfixtures import TempDirectory
-from test.util_test import ClipperBaseTestCase
+
+import katana.clipper as clipper
+from test.util_test import KatanaBaseTestCase
+
 
 INPUT_DIR=os.path.realpath(os.path.dirname(__file__))
 
-class ExamplesFunctionalTest(ClipperBaseTestCase):
+class ExamplesFunctionalTest(KatanaBaseTestCase):
     def test_examples(self):
         with TempDirectory() as output_dir:
 

@@ -1,12 +1,15 @@
 #pylint: disable=invalid-name, too-few-public-methods, too-many-public-methods
 from __future__ import print_function, absolute_import
-from katana import readhandler
-from katana.readhandler import ExcludeNonMatchedReadHandler
+
 import os.path
+
 import pysam
 from testfixtures.tempdirectory import TempDirectory
-from test.util_test import ClipperBaseTestCase, MicroMock, MockRead,\
-        MockPrimerPair, MockLog
+
+from katana import readhandler
+from katana.readhandler import ExcludeNonMatchedReadHandler
+from test.util_test import KatanaBaseTestCase, MicroMock, MockRead, \
+    MockPrimerPair, MockLog, build_read, make_bam_file
 
 
 class MockPrimerStatsDumper(MicroMock):
@@ -27,7 +30,7 @@ class MockPrimerStats(MicroMock):
         self._add_read_primer_calls.append((read, primer))
 
 
-class AddTagsReadHandlerTestCase(ClipperBaseTestCase):
+class AddTagsReadHandlerTestCase(KatanaBaseTestCase):
     def test_handle(self):
         #pylint: disable=no-member
         original_reference_start = 100
@@ -72,7 +75,7 @@ class AddTagsReadHandlerTestCase(ClipperBaseTestCase):
 
         self.assertEquals("X4:Z:" + "filter1,filter2", read._tags["X4"])
 
-class ExcludeReadHandlerTestCase(ClipperBaseTestCase):
+class ExcludeReadHandlerTestCase(KatanaBaseTestCase):
     def test_handle_noExceptionIfNoFilters(self):
         read = MockRead()
         transformation = MicroMock(filters=())
@@ -130,7 +133,7 @@ class ExcludeReadHandlerTestCase(ClipperBaseTestCase):
         self.assertEquals(False, read.is_paired)
 
 
-class StatsReadHandlerTestCase(ClipperBaseTestCase):
+class StatsReadHandlerTestCase(KatanaBaseTestCase):
     def test_handle(self):
         read1 = MockRead(is_positive_strand=True)
         read2 = MockRead(is_positive_strand=True)
@@ -159,7 +162,7 @@ class StatsReadHandlerTestCase(ClipperBaseTestCase):
                           mock_primer_stats_dumper._dump_calls)
 
 
-class TransformReadHandlerTestCase(ClipperBaseTestCase):
+class TransformReadHandlerTestCase(KatanaBaseTestCase):
     def test_handle(self):
         #pylint: disable=no-member
         read = MockRead(reference_start=100,
@@ -218,63 +221,24 @@ class TransformReadHandlerTestCase(ClipperBaseTestCase):
                           read.next_reference_start)
 
 
-class WriteReadHandlerTestCase(ClipperBaseTestCase):
-    #pylint: disable=no-member,too-many-arguments
-    @staticmethod
-    def make_bam_file(filename, reads, header=None):
-        if header is None:
-            header = { 'HD': {'VN': '1.0'},
-                      'SQ': [{'LN': 1575, 'SN': 'chr1'},
-                             {'LN': 1584, 'SN': 'chr2'}] }
-        outfile = pysam.AlignmentFile(filename, "wb", header=header)
-        for read in reads:
-            outfile.write(read.aligned_segment)
-        outfile.close()
-        readhandler.pysam_index(filename)
-
-    @staticmethod
-    def build_read(query_name = "read_28833_29006_6945",
-                   query_sequence="AGCTTAGCTA",
-                   flag = 99,
-                   reference_id = 0,
-                   reference_start = 32,
-                   mapping_quality = 20,
-                   cigar = None,
-                   next_reference_id = 0,
-                   next_reference_start=199,
-                   template_length=167,
-                   query_qualities = None):
-        a = pysam.AlignedSegment()
-        a.query_name = query_name
-        a.query_sequence = query_sequence
-        a.flag = flag
-        a.reference_id = reference_id
-        a.reference_start = reference_start
-        a.mapping_quality = mapping_quality
-        if cigar is None:
-            a.cigar = ((0,10), (2,1), (0,25))
-        a.next_reference_id = next_reference_id
-        a.next_reference_start = next_reference_start
-        a.template_length = template_length
-        if query_qualities is None:
-            a.query_qualities = [27] * len(query_sequence)
-        return MicroMock(aligned_segment=a)
+class WriteReadHandlerTestCase(KatanaBaseTestCase):
 
     def test_end_sortsAndIndexes(self):
+        #pylint: disable=no-member
         with TempDirectory() as input_dir, TempDirectory() as output_dir:
             input_bam_filename = os.path.join(input_dir.path, "input.bam")
-            self.make_bam_file(input_bam_filename, [self.build_read()])
+            make_bam_file(input_bam_filename, [build_read()])
             output_bam_filename = os.path.join(output_dir.path, "output.bam")
             mock_log = MockLog()
             handler = readhandler.WriteReadHandler(input_bam_filename,
                                                     output_bam_filename,
                                                     log_method=mock_log.log)
-            read1 = self.build_read(query_name="read1",
-                                    reference_id=0,
-                                    reference_start=20)
-            read2 = self.build_read(query_name="read2",
-                                    reference_id=0,
-                                    reference_start=10)
+            read1 = build_read(query_name="read1",
+                               reference_id=0,
+                               reference_start=20)
+            read2 = build_read(query_name="read2",
+                               reference_id=0,
+                               reference_start=10)
 
             handler.begin()
             handler.handle(read1, None, None)

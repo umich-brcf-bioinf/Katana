@@ -1,8 +1,10 @@
 """Basic CIGAR manipulation and querying. """
 
 from __future__ import print_function, absolute_import, division
+
 import itertools
 import re
+
 import katana.util as util
 
 
@@ -141,7 +143,7 @@ class CigarUtil(object):
                                         self.query_length,
                                         new_cigar.cigar,
                                         new_cigar.query_length)
-            raise util.ClipperException(msg)
+            raise util.KatanaException(msg)
 
     #TODO: consider caching
     def softclip_target(self, target_start, target_end):

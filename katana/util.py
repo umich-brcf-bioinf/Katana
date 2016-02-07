@@ -1,20 +1,23 @@
 """Classes common to several modules"""
 #TODO: elaborate module doc
 from __future__ import print_function, absolute_import, division
+
 from collections import defaultdict
+
 import natsort
+
 
 try:
     from itertools import izip
 except ImportError:  #python3.x
     izip = zip
 
-class ClipperException(Exception):
+class KatanaException(Exception):
     """Flagging cases that we can not process at this time."""
     def __init__(self, msg, *args):
         #pylint: disable=star-args
         error_msg = msg.format(*[str(i) for i in args])
-        super(ClipperException, self).__init__(error_msg)
+        super(KatanaException, self).__init__(error_msg)
 
 
 #TODO: Capture mapped pairs for each primer
