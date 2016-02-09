@@ -44,12 +44,12 @@ __version__ = katana.__version__
 DESCRIPTION=\
 '''Match each alignment in input BAM to primer, softclipping the primer region.
 
-This helps identify variants that land in the primer region because sequences
-which start or end with the primer region are only measuring the efficacy of
-the sample prep and the presence of those alignments tend to overwhelm true
-variants which occur in that region measured by overlapping primers. The output
-is conceptually similar to clipping the primers from the FASTQ reads but
-preserves the primers during alignment to improve alignment quality.
+Katana matches each read to its corresponding primer pair based on start
+position of the read. Katana then soft-clips the primer region from the edge of
+the read sequence, rescuing the signal of true variants measured by overlapping
+amplicons. The output is conceptually similar to hard-clipping the primers from
+the original FASTQ reads based on sequence identity but with the advantage that
+retaining the primers during alignment improves alignment quality.
 '''
 
 class _KatanaUsageError(Exception):
