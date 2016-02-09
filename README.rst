@@ -73,17 +73,16 @@ Katana assumes that:
 Quick Start
 -----------
 
-1. **Install Katana (see INSTALL.rst).**
+1. **Install Katana (see INSTALL.rst):**::
+  $ pip install katana
+
+
+2. **Get the examples directory:**
 ::
-  $pip install katana
+  $ git clone https://github.com/umich-brcf-bioinf/Katana
 
 
-2. **Clone the git repo to get the examples directory.**
-::
-  git clone https://github.com/umich-brcf-bioinf/Katana
-
-
-3. **Run Katana.**
+3. **Run Katana:**
 ::
   $ katana Katana/examples/primers.txt Katana/examples/chr10.pten.bam clipped.bam
 
@@ -95,7 +94,8 @@ or reads which do not match a known primer are excluded.
 -----------
 Katana help
 -----------
-::
+
+ ::
    $ katana --help
    
    usage: katana primer_manifest input_bam output_bam
@@ -115,7 +115,7 @@ Katana help
                            Preserve all incoming alignments (even if they are 
                            unmapped, cannot be matched with primers, result in 
                            invalid CIGARs, etc.)
-   
+
 ====
 
 Email bfx-katana@umich.edu for support and questions.
