@@ -40,8 +40,8 @@ the original FASTQ reads based on sequence identity but with the advantage that
 retaining the primers during alignment improves alignment quality.
 ::
   input read sequence:  TGCATG AGTCTGATCTAGGTAGTT GACGTC
-  |                     primer REGION-OF-INTEREST primer
-  |
+                        primer REGION-OF-INTEREST primer
+  
   output read sequence: tgcatg AGTCTGATCTAGGTAGTT gacgtc (lowercase = soft-clipped)
 
 
@@ -92,7 +92,6 @@ or reads which do not match a known primer are excluded.
 -----------
 Katana help
 -----------
-
 ::
   $ katana --help
   
