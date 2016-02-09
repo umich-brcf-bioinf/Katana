@@ -39,8 +39,8 @@ amplicons. The output is conceptually similar to hard-clipping the primers from
 the original FASTQ reads based on sequence identity but with the advantage that
 retaining the primers during alignment improves alignment quality.
 ::
+                      [ primer REGION-OF-INTEREST primer ]
   input read sequence:  TGCATG AGTCTGATCTAGGTAGTT GACGTC
-                        primer REGION-OF-INTEREST primer
   
   output read sequence: tgcatg AGTCTGATCTAGGTAGTT gacgtc (lowercase = soft-clipped)
 
