@@ -90,7 +90,7 @@ or reads which do not match a known primer are excluded.
 
 -----------
 Katana help
------------::
+-----------
 ::
   $ katana --help
   
