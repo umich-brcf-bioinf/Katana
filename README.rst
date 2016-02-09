@@ -40,10 +40,10 @@ the original FASTQ reads based on sequence identity but with the advantage that
 retaining the primers during alignment improves alignment quality.
 
 
- ::
-   input read:  TGCATG AGTCTGATCTAGGTAGTT GACGTC
-                primer REGION-OF-INTEREST primer
-   output read: tgcatg AGTCTGATCTAGGTAGTT gacgtc (lowercase = soft-clipped)
+::
+               primer REGION-OF-INTEREST primer
+  input read:  TGCATG AGTCTGATCTAGGTAGTT GACGTC
+  output read: tgcatg AGTCTGATCTAGGTAGTT gacgtc (lowercase = soft-clipped)
 
 
 Tags are added to each output read to help explain how it was modified:
@@ -73,14 +73,13 @@ Katana assumes that:
 Quick Start
 -----------
 
-1. **Install Katana (see INSTALL.rst):**::
+1. **Install Katana (see INSTALL.rst):**
+::
   $ pip install katana
-
 
 2. **Get the examples directory:**
 ::
   $ git clone https://github.com/umich-brcf-bioinf/Katana
-
 
 3. **Run Katana:**
 ::
@@ -95,26 +94,26 @@ or reads which do not match a known primer are excluded.
 Katana help
 -----------
 
- ::
-   $ katana --help
-   
-   usage: katana primer_manifest input_bam output_bam
-   
-   Match each alignment in input BAM to primer, softclipping the primer region.
-   
-   positional arguments:
-     primer_manifest       path to primer manifest (tab-separated text)
-     input_bam             path to input BAM
-     output_bam            path to output BAM
-   
-   
-   optional arguments:
-     -h, --help            show this help message and exit
-     -V, --version         show program's version number and exit
-     --preserve_all_alignments
-                           Preserve all incoming alignments (even if they are 
-                           unmapped, cannot be matched with primers, result in 
-                           invalid CIGARs, etc.)
+::
+  $ katana --help
+  
+  usage: katana primer_manifest input_bam output_bam
+  
+  Match each alignment in input BAM to primer, softclipping the primer region.
+  
+  positional arguments:
+    primer_manifest       path to primer manifest (tab-separated text)
+    input_bam             path to input BAM
+    output_bam            path to output BAM
+  
+  
+  optional arguments:
+    -h, --help            show this help message and exit
+    -V, --version         show program's version number and exit
+    --preserve_all_alignments
+                          Preserve all incoming alignments (even if they are 
+                          unmapped, cannot be matched with primers, result in 
+                          invalid CIGARs, etc.)
 
 ====
 
