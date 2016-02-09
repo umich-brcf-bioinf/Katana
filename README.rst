@@ -38,8 +38,6 @@ the read sequence, rescuing the signal of true variants measured by overlapping
 amplicons. The output is conceptually similar to hard-clipping the primers from
 the original FASTQ reads based on sequence identity but with the advantage that
 retaining the primers during alignment improves alignment quality.
-
-
 ::
   input read sequence:  TGCATG AGTCTGATCTAGGTAGTT GACGTC
   |                     primer REGION-OF-INTEREST primer
