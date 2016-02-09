@@ -40,9 +40,9 @@ the original FASTQ reads based on sequence identity but with the advantage that
 retaining the primers during alignment improves alignment quality.
 
 
-::
-                primer REGION-OF-INTEREST primer
+ ::
    input read:  TGCATG AGTCTGATCTAGGTAGTT GACGTC
+                primer REGION-OF-INTEREST primer
    output read: tgcatg AGTCTGATCTAGGTAGTT gacgtc (lowercase = soft-clipped)
 
 
@@ -77,19 +77,16 @@ Quick Start
 ::
   $pip install katana
 
-|
 
 2. **Clone the git repo to get the examples directory.**
 ::
   git clone https://github.com/umich-brcf-bioinf/Katana
 
-|
 
-3. ** Run Katana.**
+3. **Run Katana.**
 ::
   $ katana Katana/examples/primers.txt Katana/examples/chr10.pten.bam clipped.bam
 
-|
 This will read chr10.pten.bam and produce clipped.bam which contains reads
 adjusted to soft-clip (exclude) their respective primer regions. Unmapped reads
 or reads which do not match a known primer are excluded.
@@ -98,7 +95,7 @@ or reads which do not match a known primer are excluded.
 -----------
 Katana help
 -----------
-  ::
+::
    $ katana --help
    
    usage: katana primer_manifest input_bam output_bam
