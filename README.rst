@@ -39,16 +39,21 @@ amplicons. The output is conceptually similar to hard-clipping the primers from
 the original FASTQ reads based on sequence identity but with the advantage that
 retaining the primers during alignment improves alignment quality.
 ::
-                      [ primer REGION-OF-INTEREST primer ]
-  input read sequence:  TGCATG AGTCTGATCTAGGTAGTT GACGTC
-  output read sequence: tgcatg AGTCTGATCTAGGTAGTT gacgtc (lowercase = soft-clipped)
+  amplicon A           [ primerREGION-OF-INTERESTprimer ]
+  amplicon B                       [ primerREGION-OF-INTERESTprimer ]
+  input read1 sequence:  TGCATGAGTCTGATCTAGGTAGTTGACGTC
+  input read2 sequence:              ATCTAGGTAGTTGACGTCAGATAATGCAGC
+
+  output read1 sequence: tgcatgAGTCTGATCTAGGTAGTTgacgtc (clipped amplicon A primers)
+  output read2 sequence:             atctagGTAGTTGACGTCAGATAAtgcagc (clipped amplicon B primers)
+  (lowercase = soft-clipped)
 
 
 Tags are added to each output read to help explain how it was modified:
- - X0 : associated target_id
+ - X0 : associated primer id
  - X1 : original cigar string
  - X2 : original reference start
- - X3 : original reference_end (not modified, but FYI)
+ - X3 : original reference_end (informational; useful for reverse reads)
  - X4 : why read would be excluded (appears only if --preserve_all_alignments)
 
 
