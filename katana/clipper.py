@@ -180,9 +180,9 @@ def _parse_command_line_args(arguments):
                         help="path to output BAM")
     parser.add_argument("--preserve_all_alignments",
                         action="store_true",
-                        help=("Preserve all incoming alignments (even if they"
-                              "are unmapped, cannot be matched with primers,"
-                              "result in invalid CIGARs, etc."))
+                        help=("Preserve all incoming alignments (even if they "
+                              "are unmapped, cannot be matched with primers, "
+                              "result in invalid CIGARs, etc.)"))
     args = parser.parse_args(arguments)
     return args
 

@@ -1,6 +1,6 @@
-Installing AmpliconSoftClipper
+Installing Katana
 ==================
-AmpliconSoftClipper has been tested with:
+Katana has been tested with:
 
 * Python 2.7 and 3.4
 * pysam 0.8.3, 0.8.4
@@ -17,6 +17,13 @@ Prerequisites
 
 Installing
 ----------
+The easiest way to install Jacquard is through PyPI. Get pip if it's
+not available in your system:
+
+::
+
+   $ pip install jacquard
+
 You can install from source from github:
 
 ``$ pip install git+https://github.com/umich-brcf-bioinf/Katana``
@@ -35,4 +42,4 @@ If you already have prerequisite modules installed, you can also clone from gith
 ``$ git clone https://github.com/umich-brcf-bioinf/Katana``
 
 ``$ katana/katana-runner.py primers.txt input.bam output.bam``
-  
+

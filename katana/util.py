@@ -20,8 +20,6 @@ class KatanaException(Exception):
         super(KatanaException, self).__init__(error_msg)
 
 
-#TODO: Capture mapped pairs for each primer
-#TODO: Capture overall mapped pairs
 class PrimerStats(object):
     '''Collects simple counts for overall reads and reads per primer.'''
     STAT_KEYS = ["chrom", "target_id", "sense_start", "sense_count",

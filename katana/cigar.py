@@ -10,14 +10,14 @@ import katana.util as util
 
 class CigarUtil(object):
     _QUERY_CONSUMING = set(list("MIS=X"))
-    _REF_CONSUMING = set(list("MDNS=X")) #S is debatable, but works better
+    _REF_CONSUMING = set(list("MDNS=X"))
     _REGEX_CIGAR = re.compile("([0-9]+)([MIDNSHP=X])")
     _REGEX_MATCHING_OP = re.compile("[MX=]")
     _REGEX_NON_HARDCLIP = re.compile("[^H]")
     _REGEX_REF_CONSUMING = re.compile("[MDNS=X]")
     _REGEX_REQUIRED_OPS = re.compile("[MIDN=X]")
     _REGEX_QUERY_CONSUMING = re.compile("[MIS=X]")
-    _REGEX_QUERY_NON_CONSUMING = re.compile("[DNP]") #Preserve H?
+    _REGEX_QUERY_NON_CONSUMING = re.compile("[DNP]")
 
     def __init__(self, reference_start, cigar=None, cigar_profile=None):
         self.reference_start = reference_start
@@ -145,7 +145,6 @@ class CigarUtil(object):
                                         new_cigar.query_length)
             raise util.KatanaException(msg)
 
-    #TODO: consider caching
     def softclip_target(self, target_start, target_end):
         (pre_target, target, post_target) = self._partition_cigar(target_start,
                                                                   target_end)

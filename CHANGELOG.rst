@@ -3,13 +3,13 @@ Changelog
 
 0.1.1 (XX/XX/XXXX)
 -----------------
-- Corrected problems in BAM output:
+- Fixed problems in BAM output:
    - Corrected next reference in paired reads
    - Excludes reads where CIGAR is entirely clipped
    - Unpairs reads which had no mate in input
-- Added support for pip installs
 - Added BAM tags to excluded reads (useful when --preserving_all_reads)
 - Adjusted to improve performance (about 6x faster)
+- Added support for pip install
 - Added functional tests
 - Added support for travis CI
 - Added support for Python3
