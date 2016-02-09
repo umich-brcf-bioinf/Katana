@@ -41,9 +41,10 @@ retaining the primers during alignment improves alignment quality.
 
 
 ::
-               primer REGION-OF-INTEREST primer
-  input read:  TGCATG AGTCTGATCTAGGTAGTT GACGTC
-  output read: tgcatg AGTCTGATCTAGGTAGTT gacgtc (lowercase = soft-clipped)
+  input read sequence:  TGCATG AGTCTGATCTAGGTAGTT GACGTC
+  |                     primer REGION-OF-INTEREST primer
+  |
+  output read sequence: tgcatg AGTCTGATCTAGGTAGTT gacgtc (lowercase = soft-clipped)
 
 
 Tags are added to each output read to help explain how it was modified:
