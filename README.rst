@@ -41,7 +41,6 @@ retaining the primers during alignment improves alignment quality.
 ::
                       [ primer REGION-OF-INTEREST primer ]
   input read sequence:  TGCATG AGTCTGATCTAGGTAGTT GACGTC
-  
   output read sequence: tgcatg AGTCTGATCTAGGTAGTT gacgtc (lowercase = soft-clipped)
 
 
@@ -91,7 +90,7 @@ or reads which do not match a known primer are excluded.
 
 -----------
 Katana help
------------
+-----------::
 ::
   $ katana --help
   
