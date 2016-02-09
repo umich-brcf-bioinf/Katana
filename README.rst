@@ -40,6 +40,12 @@ the original FASTQ reads based on sequence identity but with the advantage that
 retaining the primers during alignment improves alignment quality.
 
 
+  ::
+                primer REGION-OF-INTEREST primer
+   input read:  TGCATG AGTCTGATCTAGGTAGTT GACGTC
+   output read: tgcatg AGTCTGATCTAGGTAGTT gacgtc (lowercase = soft-clipped)
+
+
 Tags are added to each output read to help explain how it was modified:
  - X0 : associated target_id
  - X1 : original cigar string
@@ -54,12 +60,12 @@ Katana assumes that:
  - primer pairs are on the same chromosome
  - primer chromsomes match the bam regions
  - primer file is tab separated; the header line includes the following fields:
-     - Customer TargetID
-     - Chr
-     - Sense Start
-     - Antisense Start
-     - Sense Sequence
-     - Antisense Sequence
+   - Customer TargetID
+   - Chr
+   - Sense Start
+   - Antisense Start
+   - Sense Sequence
+   - Antisense Sequence
  - primer file sense and antisense start are specified in 1-based coordinates
 
 
@@ -68,18 +74,20 @@ Quick Start
 -----------
 
 1. **Install Katana (see INSTALL.rst).**
+   ::
+   $pip install katana
 
 |
 
 2. **Clone the git repo to get the examples directory.**
-git clone https://github.com/umich-brcf-bioinf/Katana
+   ::
+   git clone https://github.com/umich-brcf-bioinf/Katana
 
 |
 
-3. ** Run Katana
+3. ** Run Katana.**
    ::
-
-      $ katana Katana/examples/primers.txt Katana/examples/chr10.pten.bam clipped.bam
+   $ katana Katana/examples/primers.txt Katana/examples/chr10.pten.bam clipped.bam
 
 |
 This will read chr10.pten.bam and produce clipped.bam which contains reads
@@ -90,27 +98,27 @@ or reads which do not match a known primer are excluded.
 -----------
 Katana help
 -----------
-usage: katana primer_manifest input_bam output_bam
-
-
-Match each alignment in input BAM to primer, softclipping the primer region.
-
-
-positional arguments:
-  primer_manifest       path to primer manifest (tab-separated text)
-  input_bam             path to input BAM
-  output_bam            path to output BAM
-
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -V, --version         show program's version number and exit
-  --preserve_all_alignments
-                        Preserve all incoming alignments (even if they are 
-                        unmapped, cannot be matched with primers, result in 
-                        invalid CIGARs, etc.)
-
-
+  ::
+   $ katana --help
+   
+   usage: katana primer_manifest input_bam output_bam
+   
+   Match each alignment in input BAM to primer, softclipping the primer region.
+   
+   positional arguments:
+     primer_manifest       path to primer manifest (tab-separated text)
+     input_bam             path to input BAM
+     output_bam            path to output BAM
+   
+   
+   optional arguments:
+     -h, --help            show this help message and exit
+     -V, --version         show program's version number and exit
+     --preserve_all_alignments
+                           Preserve all incoming alignments (even if they are 
+                           unmapped, cannot be matched with primers, result in 
+                           invalid CIGARs, etc.)
+   
 ====
 
 Email bfx-katana@umich.edu for support and questions.
