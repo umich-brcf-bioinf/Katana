@@ -58,12 +58,12 @@ Katana assumes that:
  - primer pairs are on the same chromosome
  - primer chromsomes match the bam regions
  - primer file is tab separated; the header line includes the following fields:
-    - Customer TargetID
-    - Chr
-    - Sense Start
-    - Antisense Start
-    - Sense Sequence
-    - Antisense Sequence
+   - Customer TargetID
+   - Chr
+   - Sense Start
+   - Antisense Start
+   - Sense Sequence
+   - Antisense Sequence
  - primer file sense and antisense start are specified in 1-based coordinates
 
 
@@ -91,7 +91,9 @@ or reads which do not match a known primer are excluded.
 -----------
 Katana help
 -----------
+
 ::
+
   $ katana --help
   
   usage: katana primer_manifest input_bam output_bam
