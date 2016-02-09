@@ -40,7 +40,7 @@ the original FASTQ reads based on sequence identity but with the advantage that
 retaining the primers during alignment improves alignment quality.
 
 
-  ::
+::
                 primer REGION-OF-INTEREST primer
    input read:  TGCATG AGTCTGATCTAGGTAGTT GACGTC
    output read: tgcatg AGTCTGATCTAGGTAGTT gacgtc (lowercase = soft-clipped)
@@ -60,12 +60,12 @@ Katana assumes that:
  - primer pairs are on the same chromosome
  - primer chromsomes match the bam regions
  - primer file is tab separated; the header line includes the following fields:
-   - Customer TargetID
-   - Chr
-   - Sense Start
-   - Antisense Start
-   - Sense Sequence
-   - Antisense Sequence
+    - Customer TargetID
+    - Chr
+    - Sense Start
+    - Antisense Start
+    - Sense Sequence
+    - Antisense Sequence
  - primer file sense and antisense start are specified in 1-based coordinates
 
 
@@ -74,20 +74,20 @@ Quick Start
 -----------
 
 1. **Install Katana (see INSTALL.rst).**
-   ::
-   $pip install katana
+::
+  $pip install katana
 
 |
 
 2. **Clone the git repo to get the examples directory.**
-   ::
-   git clone https://github.com/umich-brcf-bioinf/Katana
+::
+  git clone https://github.com/umich-brcf-bioinf/Katana
 
 |
 
 3. ** Run Katana.**
-   ::
-   $ katana Katana/examples/primers.txt Katana/examples/chr10.pten.bam clipped.bam
+::
+  $ katana Katana/examples/primers.txt Katana/examples/chr10.pten.bam clipped.bam
 
 |
 This will read chr10.pten.bam and produce clipped.bam which contains reads
