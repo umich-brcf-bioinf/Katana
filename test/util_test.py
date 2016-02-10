@@ -1,31 +1,67 @@
 #pylint: disable=invalid-name, too-few-public-methods, too-many-public-methods
 from __future__ import print_function, absolute_import
-from ampliconsoftclipper import util
-import unittest
+
 import sys
+import unittest
+
+import pysam
+
+from katana import util
+from katana.util import ReadTransformation
+from katana import readhandler
+
 try:
     from StringIO import StringIO
 except ImportError:
     from io import StringIO
 
 
-class ClipperBaseTestCase(unittest.TestCase):
-    def setUp(self):
-        util.PrimerPair._all_primers = {}
-        unittest.TestCase.setUp(self)
-        self.stderr = StringIO()
-        self.saved_stderr = sys.stderr
-        sys.stderr = self.stderr
-
-    def tearDown(self):
-        self.stderr.close()
-        sys.stderr = self.saved_stderr
-        unittest.TestCase.tearDown(self)
-
-
 class MicroMock(object):
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
+
+
+def make_bam_file(filename, reads, header=None):
+    #pylint: disable=no-member,too-many-arguments
+    if header is None:
+        header = { 'HD': {'VN': '1.0'},
+                  'SQ': [{'LN': 1575, 'SN': 'chr1'},
+                         {'LN': 1584, 'SN': 'chr2'}] }
+    outfile = pysam.AlignmentFile(filename, "wb", header=header)
+    for read in reads:
+        outfile.write(read.aligned_segment)
+    outfile.close()
+    readhandler.pysam_index(filename)
+
+def build_read(query_name = "read_28833_29006_6945",
+               query_sequence="AGCTTAGCTA",
+               flag = 99,
+               reference_id = 0,
+               reference_start = 32,
+               mapping_quality = 20,
+               cigar = None,
+               next_reference_id = 0,
+               next_reference_start=199,
+               template_length=167,
+               query_qualities = None):
+    #pylint: disable=no-member,too-many-arguments
+    a = pysam.AlignedSegment()
+    a.query_name = query_name
+    a.query_sequence = query_sequence
+    a.flag = flag
+    a.reference_id = reference_id
+    a.reference_start = reference_start
+    a.mapping_quality = mapping_quality
+    if cigar is None:
+        a.cigar = ((0, len(query_sequence)),)
+    else:
+        a.cigar = cigar
+    a.next_reference_id = next_reference_id
+    a.next_reference_start = next_reference_start
+    a.template_length = template_length
+    if query_qualities is None:
+        a.query_qualities = [27] * len(query_sequence)
+    return MicroMock(aligned_segment=a)
 
 
 class MockLog(object):
@@ -58,6 +94,9 @@ class MockCigarUtil(MicroMock):
     def __init__(self, **kwargs):
         self._softclip_targets_calls=[]
         self._softclip_target_return = None
+        self.reference_start=100
+        self.cigar="10M"
+        self.is_valid=True
         super(MockCigarUtil, self).__init__(**kwargs)
 
     def softclip_target(self, target_start, target_end):
@@ -101,10 +140,23 @@ class MockPrimerPair(MicroMock):
         return self._softclip_primers_return
 
 
+class KatanaBaseTestCase(unittest.TestCase):
+    def setUp(self):
+        util.PrimerPair._all_primers = {}
+        unittest.TestCase.setUp(self)
+        self.stderr = StringIO()
+        self.saved_stderr = sys.stderr
+        sys.stderr = self.stderr
 
-class PrimerStatsTestCase(ClipperBaseTestCase):
+    def tearDown(self):
+        self.stderr.close()
+        sys.stderr = self.saved_stderr
+        unittest.TestCase.tearDown(self)
+
+
+class PrimerStatsTestCase(KatanaBaseTestCase):
     def test_stat_keys(self):
-        self.assertEquals(7, len(util.PrimerStats.STAT_KEYS))
+        self.assertEquals(6, len(util.PrimerStats.STAT_KEYS))
 
     def test_total_read_count(self):
         read_sense = MockRead(is_positive_strand=True)
@@ -182,8 +234,7 @@ class PrimerStatsTestCase(ClipperBaseTestCase):
         self.assertEquals(222, stats1["sense_start"])
         self.assertEquals(1, stats1["sense_count"])
         self.assertEquals(0, stats1["antisense_count"])
-        self.assertEquals(25, stats1["sense_percent"])
-        self.assertEquals(0, stats1["antisense_percent"])
+        self.assertEquals(100, stats1["sense_percent"])
 
         stats2 = stats.stats(primer_pair2)
         self.assertEquals(len(util.PrimerStats.STAT_KEYS), len(stats2))
@@ -192,11 +243,10 @@ class PrimerStatsTestCase(ClipperBaseTestCase):
         self.assertEquals(444, stats2["sense_start"])
         self.assertEquals(2, stats2["sense_count"])
         self.assertEquals(1, stats2["antisense_count"])
-        self.assertEquals(50, stats2["sense_percent"])
-        self.assertEquals(25, stats2["antisense_percent"])
+        self.assertEquals(66, stats2["sense_percent"])
 
 
-class PrimerStatsDumperTestCase(ClipperBaseTestCase):
+class PrimerStatsDumperTestCase(KatanaBaseTestCase):
     def test_dump(self):
         mock_log = MockLog()
         dumper = util.PrimerStatsDumper(log_method=mock_log.log)
@@ -212,95 +262,142 @@ class PrimerStatsDumperTestCase(ClipperBaseTestCase):
         self.assertEquals('PRIMER_STATS|A2|B2', mock_log._log_calls[2][0])
 
 
+class MockAlignmentFile(object):
+    def __init__(self, reference_id_to_name):
+        self.reference_id_to_name = reference_id_to_name
 
-class ReadTestCase(ClipperBaseTestCase):
+    def getrname(self, reference_id):
+        return self.reference_id_to_name[reference_id]
+
+class ReadTestCase(KatanaBaseTestCase):
     def test_init(self):
-        mock_aligned_segment = MockAlignedSegment(query_name="read1",
-                                                  reference_name="chr1",
+        mock_alignment_file = MockAlignmentFile({1:"chr1"})
+        mock_aligned_segment = MockAlignedSegment(query_name="readA",
+                                                  reference_id=1,
                                                   reference_start=100,
                                                   reference_end=110,
                                                   cigarstring="10M",
-                                                  mate_is_unmapped=False)
-        read = util.Read(mock_aligned_segment)
+                                                  is_paired=True)
+        read = util.Read(mock_aligned_segment, mock_alignment_file)
+        self.assertEquals("readA", read.query_name)
         self.assertEquals("chr1", read.reference_name)
         self.assertEquals(100, read.reference_start)
         self.assertEquals(110, read.reference_end)
         self.assertEquals("10M", read.cigarstring)
-        self.assertEquals(True, read.mate_is_mapped)
+        self.assertEquals(True, read.is_paired)
 
     def test_mutatorsPassThroughToAlignedSegment(self):
+        mock_alignment_file = MockAlignmentFile({1:"chr1"})
         mock_aligned_segment = MockAlignedSegment(query_name="read1",
-                                                  reference_name="chr1",
+                                                  reference_id=1,
                                                   reference_start=100,
                                                   cigarstring="10M",
-                                                  mate_is_unmapped=False,
-                                                  next_reference_start=200)
-        read = util.Read(mock_aligned_segment)
+                                                  next_reference_start=150)
+        read = util.Read(mock_aligned_segment, mock_alignment_file)
         read.reference_start = 142
         read.cigarstring = "10S"
-        read.mate_is_mapped = False
+        read.next_reference_start = 200
         self.assertEquals(142,
                           mock_aligned_segment.__dict__['reference_start'])
         self.assertEquals("10S",
                           mock_aligned_segment.__dict__['cigarstring'])
-        self.assertEquals(True,
+        self.assertEquals(200,
+                          mock_aligned_segment.__dict__['next_reference_start'])
+
+    def test_isPaired(self):
+        mock_alignment_file = MockAlignmentFile({1:"chr1"})
+        mock_aligned_segment = MockAlignedSegment(query_name="read1",
+                                                  reference_id=1,
+                                                  reference_start=100,
+                                                  cigarstring="10M",
+                                                  is_paired=True,
+                                                  mate_is_unmapped = True,
+                                                  mate_is_reverse = True,
+                                                  is_proper_pair = True,
+                                                  is_read1 = True,
+                                                  next_reference_id = 1,
+                                                  next_reference_start=200)
+        read = util.Read(mock_aligned_segment, mock_alignment_file)
+
+        read.is_paired = False
+
+        self.assertEquals(False,
+                          mock_aligned_segment.__dict__['is_paired'])
+        self.assertEquals(False,
                           mock_aligned_segment.__dict__['mate_is_unmapped'])
+        self.assertEquals(False,
+                          mock_aligned_segment.__dict__['is_proper_pair'])
+        self.assertEquals(False,
+                          mock_aligned_segment.__dict__['is_read1'])
+        self.assertEquals(-1,
+                          mock_aligned_segment.__dict__['next_reference_id'])
         self.assertEquals(0,
                           mock_aligned_segment.__dict__['next_reference_start'])
 
     def test_is_positive(self):
-        read = util.Read(MockAlignedSegment(is_reverse=False))
+        mock_alignment_file = MockAlignmentFile({1:"chr1"})
+        read = util.Read(MockAlignedSegment(is_reverse=False),
+                         mock_alignment_file)
         self.assertEquals(True, read.is_positive_strand)
-        read = util.Read(MockAlignedSegment(is_reverse=True))
+        read = util.Read(MockAlignedSegment(is_reverse=True),
+                         mock_alignment_file)
         self.assertEquals(False, read.is_positive_strand)
 
     def test_key(self):
-        mock_aligned_segment = MockAlignedSegment(query_name="read1",
-                                                  reference_name="chr1",
+        mock_alignment_file = MockAlignmentFile({1:"chr1"})
+        mock_aligned_segment = MockAlignedSegment(query_name="readA",
+                                                  reference_id=1,
                                                   reference_start=100,
-                                                  is_reverse=False)
-        read = util.Read(mock_aligned_segment)
-        expected_key = ("read1", True, "chr1", 100)
+                                                  is_reverse=False,
+                                                  is_read1=True)
+        read = util.Read(mock_aligned_segment, mock_alignment_file)
+        expected_key = ("readA", True, "chr1", 100, True)
         self.assertEquals(expected_key, read.key)
 
     def test_mate_key(self):
-        mock_aligned_segment = MockAlignedSegment(query_name="read1",
+        mock_alignment_file = MockAlignmentFile({2:"chr2"})
+        mock_aligned_segment = MockAlignedSegment(query_name="readA",
                                                   is_paired=True,
                                                   mate_is_unmapped=False,
                                                   mate_is_reverse=True,
-                                                  next_reference_name="chr2",
-                                                  next_reference_start=200)
-        read = util.Read(mock_aligned_segment)
-        expected_key = ("read1", False, "chr2", 200)
+                                                  next_reference_id=2,
+                                                  next_reference_start=200,
+                                                  is_read1=True)
+        read = util.Read(mock_aligned_segment, mock_alignment_file)
+        expected_key = ("readA", False, "chr2", 200, False)
         self.assertEquals(expected_key, read.mate_key)
 
     def test_mate_key_noneWhenNoMate(self):
+        mock_alignment_file = MockAlignmentFile({2:"chr2"})
         #pylint: disable=attribute-defined-outside-init
         mock_aligned_segment = MockAlignedSegment(query_name="read1",
                                                   is_paired=True,
                                                   mate_is_unmapped=False,
                                                   mate_is_reverse=True,
-                                                  next_reference_name="chr2",
+                                                  next_reference_id=2,
                                                   next_reference_start=200)
         mock_aligned_segment.is_paired=False
-        self.assertEquals(None, util.Read(mock_aligned_segment).mate_key)
+        read = util.Read(mock_aligned_segment, mock_alignment_file)
+        self.assertEquals(None, read.mate_key)
         mock_aligned_segment.is_paired=True
 
         mock_aligned_segment.mate_is_unmapped=True
-        self.assertEquals(None, util.Read(mock_aligned_segment).mate_key)
-        mock_aligned_segment.mate_is_unmapped=True
+        read = util.Read(mock_aligned_segment, mock_alignment_file)
+        self.assertEquals(None, read.mate_key)
 
     def test_set_tag(self):
+        mock_alignment_file = MockAlignmentFile({2:"chr2"})
         mock_aligned_segment = MockAlignedSegment()
-        read = util.Read(mock_aligned_segment)
+        read = util.Read(mock_aligned_segment, mock_alignment_file)
         read.set_tag("name", "value", "type")
         self.assertEquals("name:type:value", mock_aligned_segment._tags["name"])
 
     def test_iter(self):
+        mock_alignment_file = MockAlignmentFile({1:"chr1"})
         aligned_segment1 = MockAlignedSegment(query_name="read1")
         aligned_segment2 = MockAlignedSegment(query_name="read2")
         aligned_segment_iter = iter([aligned_segment1, aligned_segment2])
-        actual_iter = util.Read.iter(aligned_segment_iter)
+        actual_iter = util.Read.iter(aligned_segment_iter, mock_alignment_file)
         actual_reads = [read for read in actual_iter]
         self.assertEquals(2, len(actual_reads))
         self.assertIsInstance(actual_reads[0], util.Read)
@@ -308,7 +405,80 @@ class ReadTestCase(ClipperBaseTestCase):
         self.assertIsInstance(actual_reads[1], util.Read)
         self.assertEquals(aligned_segment2, actual_reads[1].aligned_segment)
 
-class NullPrimerPairTestCase(ClipperBaseTestCase):
+class ReadTransformationTestCase(KatanaBaseTestCase):
+    '''Lightweight container of what we need to update the read.'''
+    def test_init(self):
+        read = MockRead(is_unmapped=False, is_paired=True)
+        new_cigar_util = MockCigarUtil(reference_start=42,
+                                       cigar="10M",
+                                       is_valid=True)
+        mock_primer_pair = MockPrimerPair(is_unmatched=False)
+        filter_builder = lambda x: ["filter1"]
+
+        transform = util.ReadTransformation(read,
+                                            mock_primer_pair,
+                                            new_cigar_util,
+                                            filter_builder)
+        self.assertEquals(mock_primer_pair, transform.primer_pair)
+        self.assertEquals(42, transform.reference_start)
+        self.assertEquals("10M", transform.cigar)
+        self.assertEquals(False, transform.is_unmapped)
+        self.assertEquals(True, transform.is_cigar_valid)
+        self.assertEquals(True, transform.is_paired)
+        self.assertEquals(("filter1",), transform.filters)
+
+    def test_NULL(self):
+        transform = ReadTransformation.NULL
+        self.assertEquals(util.PrimerPair.NULL, transform.primer_pair)
+        self.assertEquals(0, transform.reference_start)
+        self.assertEquals("", transform.cigar)
+        self.assertEquals(False, transform.is_unmapped)
+        self.assertEquals(False, transform.is_cigar_valid)
+        self.assertEquals(False, transform.is_paired)
+        self.assertEquals(("NULL",), transform.filters)
+
+
+    def test_eq(self):
+        read = MockRead(is_unmapped=False, is_paired=True)
+        primer_pair = MockPrimerPair(is_unmatched=False)
+        new_cigar_util = MockCigarUtil(cigar="10M")
+        filter_builder = lambda x: ["filter1"]
+        base = util.ReadTransformation(read,
+                                       primer_pair,
+                                       new_cigar_util,
+                                       filter_builder)
+        same = util.ReadTransformation(read,
+                                       primer_pair,
+                                       new_cigar_util,
+                                       filter_builder)
+        self.assertEquals(base, same)
+        read2 = MockRead(is_unmapped=True, is_paired=False)
+        diff_read = util.ReadTransformation(read2,
+                                            primer_pair,
+                                            new_cigar_util,
+                                            filter_builder)
+        self.assertNotEquals(base, diff_read)
+        primer_pair2 = MockPrimerPair(is_unmatched=False)
+        diff_primer = util.ReadTransformation(read,
+                                              primer_pair2,
+                                              new_cigar_util,
+                                              filter_builder)
+        self.assertNotEquals(base, diff_primer)
+        new_cigar_util2 = MockCigarUtil(cigar="20M")
+        diff_cigar = util.ReadTransformation(read,
+                                             primer_pair,
+                                             new_cigar_util2,
+                                             filter_builder)
+        self.assertNotEquals(base, diff_cigar)
+        filter_builder2 = lambda x: ["filter2"]
+        diff_filter = util.ReadTransformation(read,
+                                              primer_pair,
+                                              new_cigar_util,
+                                              filter_builder2)
+        self.assertNotEquals(base, diff_filter)
+
+
+class NullPrimerPairTestCase(KatanaBaseTestCase):
     def test_init(self):
         null_primer_pair = util._NullPrimerPair()
         old_cigar = MockCigarUtil()
@@ -316,7 +486,7 @@ class NullPrimerPairTestCase(ClipperBaseTestCase):
         self.assertEquals(old_cigar, new_cigar)
         self.assertEquals(True, null_primer_pair.is_unmatched)
 
-class PrimerPairTestCase(ClipperBaseTestCase):
+class PrimerPairTestCase(KatanaBaseTestCase):
     def test_init(self):
         primer_pair = util.PrimerPair(target_id="target_1",
                                          chrom="chr42",
@@ -393,8 +563,8 @@ class PrimerPairTestCase(ClipperBaseTestCase):
                                          sense_primer_region=(100,110),
                                          antisense_primer_region=(140,150))
 
-        expected_clipped_cigar = MockCigarUtil(reference_start=42, cigar="75X")
-        mock_cigar = MockCigarUtil(_softclip_target_return=expected_clipped_cigar)
+        expect_clipped_cigar = MockCigarUtil(reference_start=42, cigar="75X")
+        mock_cigar = MockCigarUtil(_softclip_target_return=expect_clipped_cigar)
         actual_clipped_cigar = primer_pair.softclip_primers(mock_cigar)
         self.assertEquals([(110, 140)], mock_cigar._softclip_targets_calls)
-        self.assertEquals(expected_clipped_cigar, actual_clipped_cigar)
+        self.assertEquals(expect_clipped_cigar, actual_clipped_cigar)

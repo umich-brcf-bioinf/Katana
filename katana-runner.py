@@ -3,7 +3,7 @@
 """Convenience wrapper for running amplicon soft clipper directly from source tree."""
 
 
-from ampliconsoftclipper.clipper import main
+from katana.clipper import main
 import sys
 
 if __name__ == '__main__':

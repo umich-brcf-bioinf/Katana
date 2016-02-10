@@ -1,33 +1,39 @@
 """Classes common to several modules"""
 #TODO: elaborate module doc
 from __future__ import print_function, absolute_import, division
+
 from collections import defaultdict
-import itertools
+
 import natsort
 
 
-class ClipperException(Exception):
+try:
+    from itertools import izip
+except ImportError:  #python3.x
+    izip = zip
+
+class KatanaException(Exception):
     """Flagging cases that we can not process at this time."""
     def __init__(self, msg, *args):
         #pylint: disable=star-args
         error_msg = msg.format(*[str(i) for i in args])
-        super(ClipperException, self).__init__(error_msg)
+        super(KatanaException, self).__init__(error_msg)
 
 
-#TODO: Capture mapped pairs for each primer
-#TODO: Capture overall mapped pairs
 class PrimerStats(object):
     '''Collects simple counts for overall reads and reads per primer.'''
     STAT_KEYS = ["chrom", "target_id", "sense_start", "sense_count",
-                 "antisense_count", "sense_percent", "antisense_percent"]
+                 "antisense_count", "sense_percent"]
     def __init__(self):
         self.total_read_count = 0
         self._primer_stats = defaultdict(int)
 
 
-    def _percent(self, primer, is_sense):
-        read_count = self._primer_stats[primer, is_sense]
-        return int(100 * read_count / self.total_read_count)
+    def _sense_percent(self, primer):
+        sense_read_count = self._primer_stats[primer, True]
+        antisense_read_count = self._primer_stats[primer, False]
+        return int(100 * sense_read_count / \
+                   (antisense_read_count + sense_read_count))
 
     def add_read_primer(self, read, primer_pair):
         self.total_read_count +=1
@@ -46,9 +52,8 @@ class PrimerStats(object):
                   primer_pair.sense_start,
                   self._primer_stats[primer_pair, True],
                   self._primer_stats[primer_pair, False],
-                  self._percent(primer_pair, True),
-                  self._percent(primer_pair, False)]
-        return dict(itertools.izip(PrimerStats.STAT_KEYS, values))
+                  self._sense_percent(primer_pair)]
+        return dict(izip(PrimerStats.STAT_KEYS, values))
 
 
 #TODO: Extend log method to emit subset to screen and full set to file
@@ -66,51 +71,79 @@ class PrimerStatsDumper(object):
             stats = [stat_dict[key] for key in primer_stats.STAT_KEYS]
             self._log_method(stat_format.format(*stats))
 
-
+#TODO: sort methods
 class Read(object):
     '''Lightweight wrapper around AlignedSegment'''
-    def __init__(self, aligned_segment):
+    def __init__(self, aligned_segment, input_bamfile):
         self.aligned_segment = aligned_segment
+        self.input_bamfile = input_bamfile
 
     @property
     def is_positive_strand(self):
         return not self.aligned_segment.is_reverse
 
+    def _key(self, mate=False):
+        key = None
+        if not mate:
+            key= (self.aligned_segment.query_name,
+                  self.is_positive_strand,
+                  self.input_bamfile.getrname(self.aligned_segment.reference_id),
+                  self.aligned_segment.reference_start,
+                  self.aligned_segment.is_read1)
+        elif self.aligned_segment.is_paired and \
+                (not self.aligned_segment.mate_is_unmapped):
+            key = (self.aligned_segment.query_name,
+                   not self.aligned_segment.mate_is_reverse,
+                   self.input_bamfile.getrname(self.aligned_segment.next_reference_id),
+                   self.aligned_segment.next_reference_start,
+                   not self.aligned_segment.is_read1)
+        return key
+
     @property
     def key(self):
-        return (self.aligned_segment.query_name,
-                self.is_positive_strand,
-                self.aligned_segment.reference_name,
-                self.aligned_segment.reference_start)
+        return self._key(False)
+
+    @property
+    def next_reference_start(self):
+        return self.aligned_segment.next_reference_start
+
+    @next_reference_start.setter
+    def next_reference_start(self, value):
+        self.aligned_segment.next_reference_start = value
+
 
     @property
     def mate_key(self):
-        if not self.aligned_segment.is_paired \
-                or self.aligned_segment.mate_is_unmapped:
-            return None
-        return (self.aligned_segment.query_name,
-                not self.aligned_segment.mate_is_reverse,
-                self.aligned_segment.next_reference_name,
-                self.aligned_segment.next_reference_start)
+        return self._key(True)
 
     @property
-    def mate_is_mapped(self):
-        return not self.aligned_segment.mate_is_unmapped
+    def is_unmapped(self):
+        return self.aligned_segment.is_unmapped
 
-    @mate_is_mapped.setter
-    def mate_is_mapped(self, value):
-        self.aligned_segment.mate_is_unmapped = not value
+    @property
+    def mate_is_paired(self):
+        return self.aligned_segment.is_paired
+
+    @mate_is_paired.setter
+    def is_paired(self, value):
+        self.aligned_segment.is_paired = value
         if not value:
+            self.aligned_segment.mate_is_unmapped = False
+            self.aligned_segment.mate_is_reverse = False
+            self.aligned_segment.is_proper_pair = False
+            self.aligned_segment.is_read1 = False
+            self.aligned_segment.is_read2 = False
+            self.aligned_segment.next_reference_id = -1
             self.aligned_segment.next_reference_start = 0
 
-    #TODO: test
     @property
     def query_name(self):
         return self.aligned_segment.query_name
 
     @property
     def reference_name(self):
-        return self.aligned_segment.reference_name
+        return self.input_bamfile.getrname(self.aligned_segment.reference_id)
+#        return self.aligned_segment.rname
 
     @property
     def reference_start(self):
@@ -136,9 +169,9 @@ class Read(object):
         self.aligned_segment.set_tag(tag_name, tag_value, tag_type)
 
     @staticmethod
-    def iter(aligned_segment_iter):
+    def iter(aligned_segment_iter, input_bamfile):
         for aligned_segment in aligned_segment_iter:
-            yield Read(aligned_segment)
+            yield Read(aligned_segment, input_bamfile)
 
 class _NullPrimerPair(object):
     #pylint: disable=too-few-public-methods
@@ -160,7 +193,7 @@ class PrimerPair(object):
     '''Sense start and antisense regions should be start and end (inclusive and
     exclusive respectively), zero-based, positive genomic index.'''
     _all_primers = {}
-    NULL_PRIMER_PAIR = _NullPrimerPair()
+    NULL = _NullPrimerPair()
 
     def __init__(self,
                  target_id,
@@ -204,7 +237,7 @@ class PrimerPair(object):
             primer_pair = PrimerPair._all_primers[read_key]
             return primer_pair
         except KeyError:
-            return PrimerPair.NULL_PRIMER_PAIR
+            return PrimerPair.NULL
 
     @property
     def is_unmatched(self):
@@ -214,3 +247,52 @@ class PrimerPair(object):
     def softclip_primers(self, old_cigar):
         return old_cigar.softclip_target(self._query_region_start,
                                          self._query_region_end)
+
+class _NullReadTransformation(object):
+    def __init__(self):
+        self.is_paired = False
+        self.is_unmapped = False
+        self.primer_pair = PrimerPair.NULL
+        self.reference_start = 0
+        self.cigar = ""
+        self.is_cigar_valid = False
+        self.filters=("NULL",)
+
+
+class ReadTransformation(object):
+    '''Lightweight container for changes to be made to a read.'''
+
+    NULL = _NullReadTransformation()
+
+    def __init__(self,
+                 read,
+                 primer_pair,
+                 new_cigar,
+                 filter_builder=None):
+        self.is_paired = read.is_paired
+        self.is_unmapped = read.is_unmapped
+        self.primer_pair = primer_pair
+        self.reference_start = new_cigar.reference_start
+        self.cigar = new_cigar.cigar
+        self.is_cigar_valid = new_cigar.is_valid
+        if filter_builder == None:
+            self.filters = ()
+        else:
+            self.filters = tuple(filter_builder(self))
+
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
+
+    def __repr__(self):
+        return ("{}("
+                "primer_pair={}, "
+                "reference_start={}, "
+                "cigar='{}', "
+                "is_paired={}, "
+                "filters={})").format(self.__class__,
+                                      self.primer_pair.target_id,
+                                      self.reference_start,
+                                      self.cigar,
+                                      self.is_paired,
+                                      self.filters)
+

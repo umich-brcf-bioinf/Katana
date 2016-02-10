@@ -1,20 +1,23 @@
 """Basic CIGAR manipulation and querying. """
 
 from __future__ import print_function, absolute_import, division
+
 import itertools
 import re
-import ampliconsoftclipper.util as util
+
+import katana.util as util
 
 
 class CigarUtil(object):
     _QUERY_CONSUMING = set(list("MIS=X"))
-    _REF_CONSUMING = set(list("MDNS=X")) #S is debatable, but works better
+    _REF_CONSUMING = set(list("MDNS=X"))
     _REGEX_CIGAR = re.compile("([0-9]+)([MIDNSHP=X])")
     _REGEX_MATCHING_OP = re.compile("[MX=]")
     _REGEX_NON_HARDCLIP = re.compile("[^H]")
     _REGEX_REF_CONSUMING = re.compile("[MDNS=X]")
+    _REGEX_REQUIRED_OPS = re.compile("[MIDN=X]")
     _REGEX_QUERY_CONSUMING = re.compile("[MIS=X]")
-    _REGEX_QUERY_NON_CONSUMING = re.compile("[DNP]") #Preserve H?
+    _REGEX_QUERY_NON_CONSUMING = re.compile("[DNP]")
 
     def __init__(self, reference_start, cigar=None, cigar_profile=None):
         self.reference_start = reference_start
@@ -28,6 +31,15 @@ class CigarUtil(object):
             self.cigar_profile = cigar_profile
         else:
             self.cigar_profile = self._expand_cigar(self.cigar)
+        self.query_length = \
+                len(self._REGEX_QUERY_CONSUMING.findall(self.cigar_profile))
+        self.is_valid = self._REGEX_REQUIRED_OPS.search(self.cigar) is not None
+
+    def __repr__(self):
+        return ("{}(reference_start={}, "
+                "cigar='{}')").format(self.__class__,
+                                      self.reference_start,
+                                      self.cigar)
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
@@ -124,20 +136,14 @@ class CigarUtil(object):
                 CigarUtil(constrain(region_end),
                           cigar_profile=after_profile))
 
-    #TODO: test
-    def _check_length(self, new_profile):
-        #TODO: make sequence length an attribute of CigarUtil
-        old_length = len(self._REGEX_QUERY_CONSUMING.findall(self.cigar_profile))
-        new_length = len(self._REGEX_QUERY_CONSUMING.findall(new_profile))
-        if old_length != new_length:
-            new_cigar = self._collapse_cigar_profile(new_profile)
-            msg = ("Old CIGAR length [{}] ({}) != new CIGAR length"
+    def _assert_query_lengths_match(self, new_cigar):
+        if self.query_length != new_cigar.query_length:
+            msg = ("Old CIGAR query length [{}] ({}) != new CIGAR length"
                     "[{}] ({})").format(self.cigar,
-                                        old_length,
-                                        new_cigar,
-                                        new_length)
-            raise util.ClipperException(msg)
-
+                                        self.query_length,
+                                        new_cigar.cigar,
+                                        new_cigar.query_length)
+            raise util.KatanaException(msg)
 
     def softclip_target(self, target_start, target_end):
         (pre_target, target, post_target) = self._partition_cigar(target_start,
@@ -148,15 +154,18 @@ class CigarUtil(object):
                                                          target.cigar_profile)
         post_profile = self._softclip(post_target.cigar_profile)
         new_profile = pre_profile + target_profile + post_profile
-        self._check_length(new_profile)     #TODO: test
-        return CigarUtil(new_pos, cigar_profile = new_profile)
+        new_cigar = CigarUtil(new_pos, cigar_profile = new_profile)
+        self._assert_query_lengths_match(new_cigar)
+        return  new_cigar
 
 
 class NullCigarUtil(object):
 #pylint: disable=unused-argument
     def __init__(self, reference_start):
-        self.cigar = "*"
         self.reference_start = reference_start
+        self.cigar = "*"
+        self.is_valid = True
+        self.query_length = 0
 
     def softclip_target(self, target_start, target_end):
         return self

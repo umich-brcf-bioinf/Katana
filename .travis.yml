@@ -1,0 +1,32 @@
+#cgates: 2/4/2016
+
+language: python
+python:
+    - "2.7"
+    - "3.4"
+env:
+    global:
+        - COVERALLS_PARALLEL=true
+    matrix:
+        - PYSAM_VERSION=0.8.3
+        - PYSAM_VERSION=0.8.4
+
+install:
+    - pip install -q pysam==$PYSAM_VERSION
+    - pip install -q -r requirements.txt
+
+before_script:
+    - pip install coverage
+    - pip install coveralls
+
+script:
+    - nosetests --with-coverage --verbose --cover-package=katana
+    - nosetests examples
+
+after_success:
+    - coveralls
+
+notifications:
+    webhooks: https://coveralls.io/webhook?repo_token=48uc5NnD0P170im3VqZZCvGWNjXt6CQqC
+    email:
+        - cgates@umich.edu

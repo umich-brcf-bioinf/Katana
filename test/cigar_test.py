@@ -1,15 +1,29 @@
 #pylint: disable=invalid-name, too-few-public-methods, too-many-public-methods
 from __future__ import print_function, absolute_import
+
+import re
 import unittest
-from ampliconsoftclipper import cigar
 
-
-class MicroMock(object):
-    def __init__(self, **kwargs):
-        self.__dict__.update(kwargs)
+from katana import cigar
+import katana.util
+from test.util_test import MicroMock
 
 
 class CigarUtilTestCase(unittest.TestCase):
+    def test_assert_query_lengths_match(self):
+        base = cigar.CigarUtil(42, "10M")
+        trivially_matching = cigar.CigarUtil(42, "10M")
+        base._assert_query_lengths_match(trivially_matching)
+
+        subtly_matching = cigar.CigarUtil(42, "2M15N8S")
+        base._assert_query_lengths_match(subtly_matching)
+
+        not_matching = cigar.CigarUtil(42, "2S8M2S")
+        self.assertRaisesRegexp(katana.util.KatanaException,
+                               r"Old CIGAR query length.*10M.*10.*2S8M2S.*12.*",
+                               base._assert_query_lengths_match,
+                               not_matching)
+
     def test_ref_consuming(self):
         util = cigar.CigarUtil(0, "1M")
         self.assertEquals(True, util._is_ref_consuming("M"))
@@ -26,6 +40,14 @@ class CigarUtilTestCase(unittest.TestCase):
         util = cigar.CigarUtil(42, "10M")
         self.assertEquals("10M", util.cigar)
         self.assertEquals(42, util.reference_start)
+
+    def test_init_valid(self):
+        util = cigar.CigarUtil(42, "1M1I1D1N1=1X" "1H1S")
+        self.assertEquals(True, util.is_valid)
+
+    def test_init_invalid(self):
+        util = cigar.CigarUtil(42, "1H1S")
+        self.assertEquals(False, util.is_valid)
 
     def test_init_withProfile(self):
         util = cigar.CigarUtil(42, cigar_profile="XXMMM")
@@ -53,12 +75,18 @@ class CigarUtilTestCase(unittest.TestCase):
         self.assertEquals("", util.cigar_profile)
         self.assertEquals(42, util.reference_start)
 
-
     def test_eq(self):
         base = cigar.CigarUtil(42, "10M")
         self.assertEquals(base, cigar.CigarUtil(42, "10M"))
         self.assertNotEquals(base, cigar.CigarUtil(10, "10M"))
         self.assertNotEquals(base, cigar.CigarUtil(42, "1M"))
+
+    def test_repr(self):
+        base = cigar.CigarUtil(42, "10M")
+        match = re.match("<.*(cigar.*?)'>(.*)", repr(base))
+        eval_repr = match.group(1) + match.group(2)
+        #pylint: disable=eval-used
+        self.assertEquals(base, eval(eval_repr))
 
     def test_cigar_profile(self):
         util = cigar.CigarUtil(42, "5M1I4S")
@@ -221,6 +249,15 @@ class CigarUtilTestCase(unittest.TestCase):
         self.assertEquals("2S6M2S", new_util.cigar)
         self.assertEquals(44, new_util.reference_start)
 
+    def test_softclip_target_validatesLength(self):
+        base = cigar.CigarUtil(42, "10M")
+        base.query_length = 100
+        self.assertRaises(katana.util.KatanaException,
+                          base.softclip_target,
+                          44,
+                          50)
+
+
     def test_softclip_target_flankingSoftclips(self):
         util = cigar.CigarUtil(42, "2S" "6M" "2S")
         # 4444444444
@@ -283,7 +320,10 @@ class CigarUtilTestCase(unittest.TestCase):
 class NullCigarTestCase(unittest.TestCase):
     def test_null_cigar(self):
         c = cigar.NullCigarUtil(reference_start=42)
+        self.assertEquals(42, c.reference_start)
         self.assertEquals("*", c.cigar)
+        self.assertEquals(0, c.query_length)
+        self.assertEquals(True, c.is_valid)
         self.assertEquals("*", c.softclip_target(0,100).cigar)
         self.assertEquals(42, c.softclip_target(0,100).reference_start)
 
@@ -308,6 +348,3 @@ class CigartestCase(unittest.TestCase):
         self.assertIsInstance(c, cigar.NullCigarUtil)
         self.assertEquals(42, c.reference_start)
         self.assertEquals("*", c.cigar)
-
-#TODO: test malformed cigar
-#TODO: test edgecase where softclips eliminate all matches

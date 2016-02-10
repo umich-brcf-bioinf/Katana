@@ -2,14 +2,8 @@
 """Softclips primers at edge of aligned reads based on primer locations; emits
 new BAM file with clipped reads optionally excluding alignments that did not
 match primer locations."""
-#TODO: Add TODO file
 #TODO: elaborate module doc
-#TODO: Add README.rst
-#TODO: Add ability to parse Illumna primer files
-#TODO: Emit primer bed file
-#TODO: Add to travis
-#TODO: Test in Py3
-#TODO: Add setup.py
+#TODO: see TODO.rst
 #TODO: Add to PyPI
 
 ##   Copyright 2014 Bioinformatics Core, University of Michigan
@@ -31,44 +25,49 @@ from __future__ import print_function, absolute_import, division
 import argparse
 import csv
 from datetime import datetime
-import pysam
+import resource
 import sys
+import time
 import traceback
 
-import ampliconsoftclipper
-import ampliconsoftclipper.cigar as cigar
-import ampliconsoftclipper.readhandler as readhandler
-from ampliconsoftclipper.util import ClipperException, PrimerStats,\
-        PrimerStatsDumper, PrimerPair, Read
+import pysam
 
-__version__ = ampliconsoftclipper.__version__
+import katana
+import katana.cigar as cigar
+import katana.readhandler as readhandler
+from katana.util import KatanaException, PrimerStats, PrimerStatsDumper, \
+    PrimerPair, Read, ReadTransformation
+
+
+__version__ = katana.__version__
 
 DESCRIPTION=\
 '''Match each alignment in input BAM to primer, softclipping the primer region.
 
-This helps identify variants that land in the primer region because sequences
-which start or end with the primer region are only measuring the efficacy of
-the sample prep and the presence of those alignments tend to overwhelm true
-variants which occur in that region measured by overlapping primers. The output
-is conceptually similar to clipping the primers from the FASTQ reads but
-preserves the primers during alignment to improve alignment quality.
+Katana matches each read to its corresponding primer pair based on start
+position of the read. Katana then soft-clips the primer region from the edge of
+the read sequence, rescuing the signal of true variants measured by overlapping
+amplicons. The output is conceptually similar to hard-clipping the primers from
+the original FASTQ reads based on sequence identity but with the advantage that
+retaining the primers during alignment improves alignment quality.
 '''
 
-class _ClipperUsageError(Exception):
+class _KatanaUsageError(Exception):
     """Raised for malformed command or invalid arguments."""
     def __init__(self, msg, *args):
-        super(_ClipperUsageError, self).__init__(msg, *args)
+        super(_KatanaUsageError, self).__init__(msg, *args)
 
 
-class _ClipperArgumentParser(argparse.ArgumentParser):
+class _KatanaArgumentParser(argparse.ArgumentParser):
     """Argument parser that raises UsageError instead of exiting."""
     #pylint: disable=too-few-public-methods
     def error(self, message):
         '''Suppress default exit behavior'''
-        raise _ClipperUsageError(message)
+        raise _KatanaUsageError(message)
 
 
-#TODO: make this a logger object that writes to file and console and supports debug and info calls
+#TODO: make this a logger object that writes to file and console and
+# supports debug and info calls
 def _log(msg_format, *args):
     timestamp = datetime.now().strftime('%Y/%m/%d %H:%M:%S')
     try:
@@ -78,36 +77,55 @@ def _log(msg_format, *args):
         print(args)
     sys.stderr.flush()
 
-def _build_read_transformations(read_iter):
+def _filter_builder(read_transformation):
+    filters = []
+    if read_transformation.is_unmapped:
+        filters.append("UNMAPPED_ALIGNMENT")
+    else:
+        if read_transformation.primer_pair.is_unmatched:
+            filters.append("UNMATCHED_PRIMER_PAIR")
+        if not read_transformation.is_cigar_valid:
+            filters.append("INVALID_CIGAR")
+    return filters
+
+#TODO: refactor to expedite testing (e.g. clipped_cigar_provider,
+#  cached_clipped_cigar_provider)
+def _build_read_transformations(read_iter, filter_builder):
     read_transformations = {}
     read_count = 0
+    cigar_cache={}
     for read in read_iter:
         try:
-            primer_pair = PrimerPair.get_primer_pair(read)
-            old_cigar = cigar.cigar_factory(read)
-            new_cigar = primer_pair.softclip_primers(old_cigar)
-            read_transformations[read.key] = (primer_pair,
-                                              new_cigar.reference_start,
-                                              new_cigar.cigar)
             read_count += 1
-        #TODO: test
-        except ClipperException as exception:
+            primer_pair = PrimerPair.get_primer_pair(read)
+            key = (primer_pair, read.reference_start, read.cigarstring)
+            if not cigar_cache.get(key):
+                old_cigar = cigar.cigar_factory(read)
+                new_cigar = primer_pair.softclip_primers(old_cigar)
+                cigar_cache[key] = new_cigar
+            new_cigar = cigar_cache[key]
+            transform = ReadTransformation(read,
+                                           primer_pair,
+                                           new_cigar,
+                                           filter_builder)
+            read_transformations[read.key] = transform
+        except Exception as exception:
             msg = "Problem with read {} [line {}] and primer pair {}: {}"
-            raise ClipperException(msg.format(read.query_name,
-                                        read_count,
-                                        primer_pair.target_id,
-                                        exception))
+            raise KatanaException(msg.format(read.query_name,
+                                             read_count,
+                                             primer_pair.target_id,
+                                             exception))
     _log("Built transforms for [{}] alignments", read_count)
     return read_transformations
 
+
 def _handle_reads(read_handlers, read_iter, read_transformations):
-    null_transformation = (PrimerPair.NULL_PRIMER_PAIR, 0, "")
     for handler in read_handlers:
         handler.begin()
     for read in read_iter:
         read_transformation = read_transformations[read.key]
         mate_transformation = read_transformations.get(read.mate_key,
-                                                       null_transformation)
+                                                       ReadTransformation.NULL)
         try:
             for handler in read_handlers:
                 handler.handle(read, read_transformation, mate_transformation)
@@ -139,16 +157,15 @@ def _build_handlers(input_bam_filename,
     write = readhandler.WriteReadHandler(input_bam_filename,
                                           output_bam_filename,
                                           log_method=_log)
-    handlers = [stats, exclude, tag, transform, write]
+    handlers = [stats, tag, transform, exclude, write]
     if include_unmatched_reads:
         handlers.remove(exclude)
     return handlers
 
-#TODO: test
 def _parse_command_line_args(arguments):
-    parser = _ClipperArgumentParser( \
+    parser = _KatanaArgumentParser( \
         formatter_class=argparse.RawTextHelpFormatter,
-        usage="clipper primer_manifest input_bam output_bam",
+        usage="katana primer_manifest input_bam output_bam",
         description=(DESCRIPTION))
 
     parser.add_argument("-V",
@@ -161,20 +178,28 @@ def _parse_command_line_args(arguments):
                         help="path to input BAM")
     parser.add_argument('output_bam',
                         help="path to output BAM")
-    parser.add_argument("--include_unmatched",
+    parser.add_argument("--preserve_all_alignments",
                         action="store_true",
-                        help=("Preserve all incoming alignments (even if they"
-                              "cannot be matched with primers"))
+                        help=("Preserve all incoming alignments (even if they "
+                              "are unmapped, cannot be matched with primers, "
+                              "result in invalid CIGARs, etc.)"))
     args = parser.parse_args(arguments)
     return args
 
+def _peak_memory():
+    peak_memory = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    peak_memory_mb = peak_memory/1024
+    if sys.platform == 'darwin':
+        peak_memory_mb /= 1024
+    return int(peak_memory_mb)
+
+
 #TODO: test
-#TODO: deal if input bam missing index
-#TODO: deal if input bam regions disjoint with primer regions
-#TODO: warn/stop if less than 5% reads transformed
+#TODO: check input files exist
 def main(command_line_args=None):
-    '''Clipper entry point.'''
+    '''Katana entry point.'''
     try:
+        start_time = time.time()
         if not command_line_args:
             command_line_args = sys.argv
         args = _parse_command_line_args(command_line_args[1:])
@@ -189,22 +214,26 @@ def main(command_line_args=None):
         #pylint: disable=no-member
         input_bamfile = pysam.AlignmentFile(args.input_bam,"rb")
         aligned_segment_iter = input_bamfile.fetch()
-        read_iter = Read.iter(aligned_segment_iter)
-        read_transformations = _build_read_transformations(read_iter)
+        read_iter = Read.iter(aligned_segment_iter, input_bamfile)
+        read_transformations = _build_read_transformations(read_iter,
+                                                            _filter_builder)
 
         _log("Writing transformed alignments to [{}]", args.output_bam)
         handlers = _build_handlers(args.input_bam,
                                    args.output_bam,
-                                   args.include_unmatched)
+                                   args.preserve_all_alignments)
         aligned_segment_iter = input_bamfile.fetch()
-        read_iter = Read.iter(aligned_segment_iter)
+        read_iter = Read.iter(aligned_segment_iter, input_bamfile)
         _handle_reads(handlers, read_iter, read_transformations)
 
-        _log("Done")
-    except _ClipperUsageError as usage_error:
-        message = "clipper usage problem: {}".format(str(usage_error))
+        elapsed_time = int(time.time() - start_time)
+        _log("Done ({} seconds, {}mb peak memory)",
+             elapsed_time,
+             _peak_memory())
+    except _KatanaUsageError as usage_error:
+        message = "katana usage problem: {}".format(str(usage_error))
         print(message, file=sys.stderr)
-        print("See 'clipper --help'.", file=sys.stderr)
+        print("See 'katana --help'.", file=sys.stderr)
         sys.exit(1)
     except Exception: #pylint: disable=broad-except
         _log("ERROR: An unexpected error occurred")
@@ -219,4 +248,6 @@ def main(command_line_args=None):
 
 
 if __name__ == '__main__':
+    #import cProfile
+    #cProfile.run('main()')
     main(sys.argv)

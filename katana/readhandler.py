@@ -2,15 +2,23 @@
 #TODO: elaborate module doc
 from __future__ import print_function, absolute_import, division
 
+from collections import defaultdict
 import os
+
 import pysam
 
 
 # I would rather just say pysam.index(...), but since that global is
 # added dynamically, Eclipse flags this as a compilation problem. So
 # instead we connect directly to the pysam.SamtoolsDispatcher.
-PYSAM_INDEX = pysam.SamtoolsDispatcher("index", None).__call__
-PYSAM_SORT = pysam.SamtoolsDispatcher("sort", None).__call__
+def pysam_index(input_filename):
+    pysam.SamtoolsDispatcher("index", None).__call__(input_filename,
+                                                     catch_stdout=False)
+
+def pysam_sort(input_filename, output_prefix):
+    pysam.SamtoolsDispatcher("sort", None).__call__(input_filename,
+                                                    output_prefix,
+                                                    catch_stdout=False)
 
 
 class _BaseReadHandler(object):
@@ -25,38 +33,35 @@ class _BaseReadHandler(object):
 class AddTagsReadHandler(_BaseReadHandler):
     '''Adds original read values and other explanatory tags.'''
     def handle(self, read, read_transformation, mate_transformation):
-        primer_pair = read_transformation[0]
+        primer_pair = read_transformation.primer_pair
         read.set_tag("X0", primer_pair.target_id, "Z")
         read.set_tag("X1", read.cigarstring, "Z")
         read.set_tag("X2", read.reference_start, "i")
         read.set_tag("X3", read.reference_end, "i")
+        if read_transformation.filters:
+            filter_string = ",".join(read_transformation.filters)
+            read.set_tag("X4", filter_string, "Z")
+
 
 class ExcludeNonMatchedReadHandler(_BaseReadHandler):
     '''Excludes reads from further processing'''
-    STOP_ITERATION_EXCEPTION = StopIteration()
+    _STOP_ITERATION_EXCEPTION = StopIteration()
     def __init__(self, log_method):
-        self._unmatched_count = 0
-        self._broken_pair_count = 0
-        self._neither_match_count = 0
         self._log_method = log_method
+        self._all_exclusions = defaultdict(int)
 
     def handle(self, read, read_transformation, mate_transformation):
-        primer_pair = read_transformation[0]
-        mate_primer_pair = mate_transformation[0]
-        if primer_pair.is_unmatched:
-            self._unmatched_count += 1
-            raise self.STOP_ITERATION_EXCEPTION
-        if read.mate_is_mapped and mate_primer_pair.is_unmatched:
-            self._broken_pair_count += 1
-            read.mate_is_mapped = False
+        if mate_transformation.filters:
+            read.is_paired = False
+        if read_transformation.filters:
+            self._all_exclusions[read_transformation.filters] += 1
+            raise self._STOP_ITERATION_EXCEPTION
 
     def end(self):
-        msg = ("EXCLUDE|[{}] alignments did not match a primer and will be "
-               "excluded from the output")
-        self._log_method(msg, self._unmatched_count)
-        msg = ("EXCLUDE|[{}] alignment pairs were broken because their mates "
-               "did not match a primer")
-        self._log_method(msg, self._broken_pair_count)
+        for (filters, count) in self._all_exclusions.items():
+            msg = "EXCLUDE|{} alignments were excluded because: {}"
+            self._log_method(msg, count, ",".join(filters))
+
 
 class StatsHandler(_BaseReadHandler):
     '''Processes reads and primers connecting PrimerStats and
@@ -66,8 +71,8 @@ class StatsHandler(_BaseReadHandler):
         self._primer_stats_dumper = primer_stats_dumper
 
     def handle(self, read, read_transformation, mate_transformation):
-        primer_pair = read_transformation[0]
-        self._primer_stats.add_read_primer(read, primer_pair)
+        self._primer_stats.add_read_primer(read,
+                                           read_transformation.primer_pair)
 
     def end(self):
         self._primer_stats_dumper.dump(self._primer_stats)
@@ -76,12 +81,10 @@ class StatsHandler(_BaseReadHandler):
 class TransformReadHandler(_BaseReadHandler):
     '''Updates reference_start, cigar string, and mate_reference_start.'''
     def handle(self, read, read_transformation, mate_transformation):
-        (new_reference_start, new_cigar_string) = read_transformation[1:]
-        read.reference_start = new_reference_start
-        read.cigarstring = new_cigar_string
-        (mate_primer_pair, mate_reference_start) = mate_transformation[0:2]
-        if not mate_primer_pair.is_unmatched:
-            read.mate_reference_start = mate_reference_start
+        read.reference_start = read_transformation.reference_start
+        read.cigarstring = read_transformation.cigar
+        if read.is_paired and not mate_transformation.is_unmapped:
+            read.next_reference_start = mate_transformation.reference_start
 
 
 #TODO: Add PG and CO header lines for tags
@@ -122,9 +125,9 @@ class WriteReadHandler(_BaseReadHandler):
         self._bamfile = None
         output_root = os.path.splitext(self._output_bam_filename)[0]
         self._log("WRITE_BAM|sorting BAM")
-        PYSAM_SORT(self._tmp_bam_filename, output_root)
+        pysam_sort(self._tmp_bam_filename, output_root)
         self._log("WRITE_BAM|indexing BAM")
-        PYSAM_INDEX(self._output_bam_filename)
+        pysam_index(self._output_bam_filename)
         os.remove(self._tmp_bam_filename)
         self._log("WRITE_BAM|wrote [{}] alignments to [{}]",
                   self._read_count,
