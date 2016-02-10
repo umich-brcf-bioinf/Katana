@@ -1,7 +1,11 @@
 Changelog
 =========
 
-0.1.1 (XX/XX/XXXX)
+X.X.X (XX/XX/XXXX)
+------------------
+
+
+0.1.1 (2/9/2016)
 -----------------
 - Fixed problems in BAM output:
    - Corrected next reference in paired reads
