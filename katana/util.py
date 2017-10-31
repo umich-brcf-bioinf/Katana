@@ -173,6 +173,15 @@ class Read(object):
         for aligned_segment in aligned_segment_iter:
             yield Read(aligned_segment, input_bamfile)
 
+    @property
+    def mate_cigar(self):
+        return self.aligned_segment.get_tag('MC')
+
+    @mate_cigar.setter
+    def mate_cigar(self, value):
+        self.aligned_segment.set_tag('MC',value)
+
+
 class _NullPrimerPair(object):
     #pylint: disable=too-few-public-methods
     def __init__(self):

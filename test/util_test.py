@@ -424,6 +424,16 @@ class ReadTestCase(KatanaBaseTestCase):
         self.assertIsInstance(actual_reads[1], util.Read)
         self.assertEquals(aligned_segment2, actual_reads[1].aligned_segment)
 
+    def test_mate_cigar(self):
+        mock_alignment_file = MockAlignmentFile({2:"chr2"})
+        aligned_segment = build_aligned_segment()
+        aligned_segment.set_tag('MC', '10M')
+        read = util.Read(aligned_segment, mock_alignment_file)
+
+        self.assertEqual('10M', read.mate_cigar)
+        read.mate_cigar = '2S8M'
+        self.assertEqual('2S8M', aligned_segment.get_tag('MC'))
+
 class ReadTransformationTestCase(KatanaBaseTestCase):
     '''Lightweight container of what we need to update the read.'''
     def test_init(self):

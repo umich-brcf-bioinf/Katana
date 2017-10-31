@@ -29,7 +29,6 @@ class _BaseReadHandler(object):
     def end(self):
         pass
 
-
 class AddTagsReadHandler(_BaseReadHandler):
     '''Adds original read values and other explanatory tags.'''
     #pylint: disable=unused-parameter
@@ -84,9 +83,12 @@ class TransformReadHandler(_BaseReadHandler):
     def handle(self, read, read_transformation, mate_transformation):
         read.reference_start = read_transformation.reference_start
         read.cigarstring = read_transformation.cigar
-        if read.is_paired and not mate_transformation.is_unmapped:
-            read.next_reference_start = mate_transformation.reference_start
-
+        if read.is_paired:
+            if mate_transformation.is_unmapped:
+                read.mate_cigar = None
+            else:
+                read.next_reference_start = mate_transformation.reference_start
+                read.mate_cigar = mate_transformation.cigar
 
 #TODO: Add PG and CO header lines for tags
 class WriteReadHandler(_BaseReadHandler):
