@@ -134,7 +134,7 @@ class Read(object):
             self.aligned_segment.is_read1 = False
             self.aligned_segment.is_read2 = False
             self.aligned_segment.next_reference_id = -1
-            self.aligned_segment.next_reference_start = 0
+            self.aligned_segment.next_reference_start = -1
 
     @property
     def query_name(self):

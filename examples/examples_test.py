@@ -11,8 +11,8 @@ INPUT_DIR=os.path.realpath(os.path.dirname(__file__))
 
 class ExamplesFunctionalTest(KatanaBaseTestCase):
     def test_examples(self):
-        with TempDirectory() as output_dir:
-
+        with TempDirectory() as temp_dir:
+            output_dir = temp_dir.path
             input_bam = "chr10.pten.bam"
             output_bam = "chr10.pten.clipped.bam"
             output_bai = output_bam + ".bai"
@@ -20,8 +20,8 @@ class ExamplesFunctionalTest(KatanaBaseTestCase):
             input_bam_filename = os.path.join(INPUT_DIR, input_bam)
             expect_bam_filename = os.path.join(INPUT_DIR, output_bam)
             expect_bai_filename = os.path.join(INPUT_DIR, output_bai)
-            output_bam_filename = os.path.join(output_dir.path, output_bam)
-            output_bai_filename = os.path.join(output_dir.path, output_bai)
+            output_bam_filename = os.path.join(output_dir, output_bam)
+            output_bai_filename = os.path.join(output_dir, output_bai)
             clipper.main(["program_name",
                           input_primer_filename,
                           input_bam_filename,
@@ -34,8 +34,8 @@ class ExamplesFunctionalTest(KatanaBaseTestCase):
                             "{} does not match expected".format(output_bai))
 
     def test_preserve_all_alignments(self):
-        with TempDirectory() as output_dir:
-
+        with TempDirectory() as temp_dir:
+            output_dir = temp_dir.path
             input_bam = "chr10.pten.bam"
             output_bam = "chr10.pten.clipped-preserve_all_alignments.bam"
             output_bai = output_bam + ".bai"
@@ -43,8 +43,8 @@ class ExamplesFunctionalTest(KatanaBaseTestCase):
             input_bam_filename = os.path.join(INPUT_DIR, input_bam)
             expect_bam_filename = os.path.join(INPUT_DIR, output_bam)
             expect_bai_filename = os.path.join(INPUT_DIR, output_bai)
-            output_bam_filename = os.path.join(output_dir.path, output_bam)
-            output_bai_filename = os.path.join(output_dir.path, output_bai)
+            output_bam_filename = os.path.join(output_dir, output_bam)
+            output_bai_filename = os.path.join(output_dir, output_bai)
             clipper.main(["program_name",
                           "--preserve_all_alignments",
                           input_primer_filename,

@@ -32,6 +32,7 @@ class _BaseReadHandler(object):
 
 class AddTagsReadHandler(_BaseReadHandler):
     '''Adds original read values and other explanatory tags.'''
+    #pylint: disable=unused-parameter
     def handle(self, read, read_transformation, mate_transformation):
         primer_pair = read_transformation.primer_pair
         read.set_tag("X0", primer_pair.target_id, "Z")

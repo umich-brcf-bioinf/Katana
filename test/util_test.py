@@ -1,4 +1,4 @@
-#pylint: disable=invalid-name, too-few-public-methods, too-many-public-methods
+#pylint: disable=invalid-name, too-few-public-methods, too-many-public-methods, unused-parameter
 from __future__ import print_function, absolute_import
 
 import sys
@@ -33,7 +33,7 @@ def make_bam_file(filename, reads, header=None):
     outfile.close()
     readhandler.pysam_index(filename)
 
-def build_read(query_name = "read_28833_29006_6945",
+def build_aligned_segment(query_name = "read_28833_29006_6945",
                query_sequence="AGCTTAGCTA",
                flag = 99,
                reference_id = 0,
@@ -61,6 +61,21 @@ def build_read(query_name = "read_28833_29006_6945",
     a.template_length = template_length
     if query_qualities is None:
         a.query_qualities = [27] * len(query_sequence)
+    return a
+
+def build_read(query_name = "read_28833_29006_6945",
+               query_sequence="AGCTTAGCTA",
+               flag = 99,
+               reference_id = 0,
+               reference_start = 32,
+               mapping_quality = 20,
+               cigar = None,
+               next_reference_id = 0,
+               next_reference_start=199,
+               template_length=167,
+               query_qualities = None):
+    #pylint: disable=no-member,too-many-arguments
+    a = build_aligned_segment(query_name, query_sequence, flag, reference_id, reference_start, mapping_quality, cigar, next_reference_id, next_reference_start, template_length, query_qualities)
     return MicroMock(aligned_segment=a)
 
 
@@ -288,51 +303,55 @@ class ReadTestCase(KatanaBaseTestCase):
 
     def test_mutatorsPassThroughToAlignedSegment(self):
         mock_alignment_file = MockAlignmentFile({1:"chr1"})
-        mock_aligned_segment = MockAlignedSegment(query_name="read1",
+        aligned_segment = build_aligned_segment(query_name="read1",
                                                   reference_id=1,
                                                   reference_start=100,
-                                                  cigarstring="10M",
+                                                  cigar=((0, 10),),
                                                   next_reference_start=150)
-        read = util.Read(mock_aligned_segment, mock_alignment_file)
+        read = util.Read(aligned_segment, mock_alignment_file)
         read.reference_start = 142
         read.cigarstring = "10S"
         read.next_reference_start = 200
         self.assertEquals(142,
-                          mock_aligned_segment.__dict__['reference_start'])
+                          aligned_segment.reference_start)
         self.assertEquals("10S",
-                          mock_aligned_segment.__dict__['cigarstring'])
+                          aligned_segment.cigarstring)
         self.assertEquals(200,
-                          mock_aligned_segment.__dict__['next_reference_start'])
+                          aligned_segment.next_reference_start)
 
-    def test_isPaired(self):
+    def test_isPaired_mutatorPassedThroughToAlignedSegment(self):
         mock_alignment_file = MockAlignmentFile({1:"chr1"})
-        mock_aligned_segment = MockAlignedSegment(query_name="read1",
-                                                  reference_id=1,
-                                                  reference_start=100,
-                                                  cigarstring="10M",
-                                                  is_paired=True,
-                                                  mate_is_unmapped = True,
-                                                  mate_is_reverse = True,
-                                                  is_proper_pair = True,
-                                                  is_read1 = True,
-                                                  next_reference_id = 1,
-                                                  next_reference_start=200)
-        read = util.Read(mock_aligned_segment, mock_alignment_file)
+        aligned_segment = build_aligned_segment(query_name="read1",
+                                                reference_id=1,
+                                                reference_start=100,
+                                                cigar=((0, 10),),
+                                                next_reference_id = 1,
+                                                next_reference_start=200)
+        aligned_segment.is_paired=True
+        aligned_segment.mate_is_unmapped = True
+        aligned_segment.mate_is_reverse = True
+        aligned_segment.is_proper_pair = True
+        aligned_segment.is_read1 = True
+        original_flag = aligned_segment.flag
+
+        read = util.Read(aligned_segment, mock_alignment_file)
 
         read.is_paired = False
 
+        self.assertEquals(107, original_flag)
+        self.assertEquals(0, aligned_segment.flag)
         self.assertEquals(False,
-                          mock_aligned_segment.__dict__['is_paired'])
+                          aligned_segment.is_paired)
         self.assertEquals(False,
-                          mock_aligned_segment.__dict__['mate_is_unmapped'])
+                          aligned_segment.mate_is_unmapped)
         self.assertEquals(False,
-                          mock_aligned_segment.__dict__['is_proper_pair'])
+                          aligned_segment.is_proper_pair)
         self.assertEquals(False,
-                          mock_aligned_segment.__dict__['is_read1'])
+                          aligned_segment.is_read1)
         self.assertEquals(-1,
-                          mock_aligned_segment.__dict__['next_reference_id'])
-        self.assertEquals(0,
-                          mock_aligned_segment.__dict__['next_reference_start'])
+                          aligned_segment.next_reference_id)
+        self.assertEquals(-1,
+                          aligned_segment.next_reference_start)
 
     def test_is_positive(self):
         mock_alignment_file = MockAlignmentFile({1:"chr1"})
