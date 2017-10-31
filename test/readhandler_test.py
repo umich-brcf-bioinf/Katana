@@ -75,6 +75,28 @@ class AddTagsReadHandlerTestCase(KatanaBaseTestCase):
 
         self.assertEquals("X4:Z:" + "filter1,filter2", read._tags["X4"])
 
+    def test_handle_sanitizes_tags(self):
+        #pylint: disable=no-member
+        original_reference_start = 100
+        original_reference_end = 110
+        original_cigar_string = "10M"
+        read = MockRead(reference_start=100,
+                        reference_end=110,
+                        cigarstring="10M")
+        primer_pair_target = "123!@#$%target \t\t A \n thing-_."
+        primer_pair = MockPrimerPair(target_id=primer_pair_target)
+
+        transformation = MicroMock(primer_pair=primer_pair,
+                                   filters=())
+        mate_transformation = None
+        handler = readhandler.AddTagsReadHandler()
+
+        handler.handle(read, transformation, mate_transformation)
+
+        self.assertEquals("X0:Z:123_target_A_thing-_.",
+                          read._tags["X0"])
+
+
 class ExcludeReadHandlerTestCase(KatanaBaseTestCase):
     def test_handle_noExceptionIfNoFilters(self):
         read = MockRead()

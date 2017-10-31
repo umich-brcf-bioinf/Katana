@@ -5,8 +5,11 @@ Changelog
 -----------------
  - Adds/correctly updates MC tag
  - Fixed erroneous mate info when mate is filtered out
+ 
    - Correctly sets mate start pos to 0
    - Removes MC tag if present
+ 
+ - Sanitizes BAM tag of primer names 
 
 
 0.1.1 (2/9/2016)

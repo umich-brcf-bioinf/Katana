@@ -4,6 +4,7 @@ from __future__ import print_function, absolute_import, division
 
 from collections import defaultdict
 import os
+import re
 
 import pysam
 
@@ -31,10 +32,14 @@ class _BaseReadHandler(object):
 
 class AddTagsReadHandler(_BaseReadHandler):
     '''Adds original read values and other explanatory tags.'''
+    
+    _SANITIZED_REGEX = re.compile('[^A-Za-z0-9-_.]+')
+
     #pylint: disable=unused-parameter
     def handle(self, read, read_transformation, mate_transformation):
         primer_pair = read_transformation.primer_pair
-        read.set_tag("X0", primer_pair.target_id, "Z")
+        sanitized_target_id = self._sanitize(primer_pair.target_id)
+        read.set_tag("X0", sanitized_target_id, "Z")
         read.set_tag("X1", read.cigarstring, "Z")
         read.set_tag("X2", read.reference_start, "i")
         read.set_tag("X3", read.reference_end, "i")
@@ -42,6 +47,8 @@ class AddTagsReadHandler(_BaseReadHandler):
             filter_string = ",".join(read_transformation.filters)
             read.set_tag("X4", filter_string, "Z")
 
+    def _sanitize(self, value):
+         return re.sub(self._SANITIZED_REGEX, '_', value)
 
 class ExcludeNonMatchedReadHandler(_BaseReadHandler):
     '''Excludes reads from further processing'''
