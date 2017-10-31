@@ -168,22 +168,25 @@ class TransformReadHandlerTestCase(KatanaBaseTestCase):
         read = MockRead(reference_start=100,
                         cigarstring="10M",
                         next_reference_start=150,
-                        is_paired = True)
+                        is_paired = True,
+                        mate_cigar='10M')
         new_reference_start = 102
         new_cigar_string = "2S8M"
+        new_mate_cigar_string = '8M2S'
         new_next_ref_start = 200
         transformation = MicroMock(primer_pair=None,
                                    reference_start=new_reference_start,
                                    cigar=new_cigar_string)
         mate_transformation = MicroMock(primer_pair=None,
                                         reference_start=new_next_ref_start,
-                                        ciagr="",
+                                        cigar=new_mate_cigar_string,
                                         is_unmapped=False)
         handler = readhandler.TransformReadHandler()
         handler.handle(read, transformation, mate_transformation)
         self.assertEquals(new_reference_start, read.reference_start)
         self.assertEquals(new_cigar_string, read.cigarstring)
         self.assertEquals(new_next_ref_start, read.next_reference_start)
+        self.assertEquals(new_mate_cigar_string, read.mate_cigar)
 
     def test_handle_ignoresMateIfUnpaired(self):
         #pylint: disable=no-member
@@ -219,6 +222,21 @@ class TransformReadHandlerTestCase(KatanaBaseTestCase):
         handler.handle(read, transformation, mate_transformation)
         self.assertEquals(original_next_reference_start,
                           read.next_reference_start)
+
+    def test_handle_RemovesMateCigarTagIfMateUnmapped(self):
+        #pylint: disable=no-member
+        read = MockRead(reference_start=111,
+                        cigarstring="10M",
+                        next_reference_start=222,
+                        is_paired = True,
+                        mate_cigar='10M')
+        transformation = MicroMock(reference_start=111,
+                                   cigar="10M")
+        mate_transformation = MicroMock(is_unmapped=True,
+                                        reference_start=333)
+        handler = readhandler.TransformReadHandler()
+        handler.handle(read, transformation, mate_transformation)
+        self.assertEquals(None, read.mate_cigar)
 
 
 class WriteReadHandlerTestCase(KatanaBaseTestCase):
