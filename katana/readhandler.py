@@ -9,7 +9,6 @@ import sys
 
 import pysam
 from katana.util import KatanaException
-from katana import readhandler
 
 PYSAM_ADAPTER = None
 class _Pysam8(object):
@@ -171,9 +170,9 @@ class WriteReadHandler(_BaseReadHandler):
         self._bamfile = None
         output_root = os.path.splitext(self._output_bam_filename)[0]
         self._log("WRITE_BAM|sorting BAM")
-        readhandler.PYSAM_ADAPTER.pysam_sort(self._tmp_bam_filename, output_root)
+        PYSAM_ADAPTER.pysam_sort(self._tmp_bam_filename, output_root)
         self._log("WRITE_BAM|indexing BAM")
-        readhandler.PYSAM_ADAPTER.pysam_index(self._output_bam_filename)
+        PYSAM_ADAPTER.pysam_index(self._output_bam_filename)
         os.remove(self._tmp_bam_filename)
         self._log("WRITE_BAM|wrote [{}] alignments to [{}]",
                   self._read_count,
