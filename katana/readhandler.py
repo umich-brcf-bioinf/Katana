@@ -13,13 +13,16 @@ from katana.util import KatanaException
 PYSAM_ADAPTER = None
 class _Pysam8(object):
     _SUPPORTED = re.match(r"^0\.8\.*", pysam.__version__)
-
+    
+    @staticmethod
     def pysam_index(input_filename):
         pysam.index(input_filename, catch_stdout=False)
 
+    @staticmethod
     def pysam_sort(input_filename, output_prefix):
         pysam.sort(input_filename, output_prefix, catch_stdout=False)
     
+    @staticmethod
     def pysam_view(input_filename):
         stdout_orig = sys.stdout
         try:
@@ -31,12 +34,15 @@ class _Pysam8(object):
 class _Pysam9_10_11_12(object):
     _SUPPORTED = re.match(r"^0\.(9|10|11|12)\.*", pysam.__version__)
 
+    @staticmethod
     def pysam_index(input_filename):
         pysam.index(input_filename, catch_stdout=False)
 
+    @staticmethod
     def pysam_sort(input_filename, output_prefix):
         pysam.sort(input_filename, '-o', output_prefix + '.bam', catch_stdout=False)
     
+    @staticmethod
     def pysam_view(input_filename):
         stdout_orig = sys.stdout
         try:
@@ -52,7 +58,7 @@ class _Pysam9_10_11_12(object):
 
 for pysam_adpater in [_Pysam8, _Pysam9_10_11_12]:
     if pysam_adpater._SUPPORTED:
-        PYSAM_ADAPTER=pysam_adpater
+        PYSAM_ADAPTER=pysam_adpater()
         break
 else:
     raise KatanaException('Unsupported version of pysam; please review config and install instructions.')

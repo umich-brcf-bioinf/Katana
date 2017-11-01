@@ -1,4 +1,5 @@
 cython==0.24
 natsort==4.0.4
-pysam>=0.8.3
+pysam>=0.8.3,<0.13
 testfixtures>=3.0.2
+nose>=1.3.7
