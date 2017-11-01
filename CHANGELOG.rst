@@ -9,7 +9,8 @@ Changelog
    - Correctly sets mate start pos to 0
    - Removes MC tag if present
  
- - Sanitizes BAM tag of primer names 
+ - Sanitizes BAM tag of primer names
+ - Extended supported pysam versions to include 0.9-0.12 
 
 
 0.1.1 (2/9/2016)

@@ -5,22 +5,58 @@ from __future__ import print_function, absolute_import, division
 from collections import defaultdict
 import os
 import re
+import sys
 
 import pysam
+from katana.util import KatanaException
+from katana import readhandler
 
+PYSAM_ADAPTER = None
+class _Pysam8(object):
+    _SUPPORTED = re.match(r"^0\.8\.*", pysam.__version__)
 
-# I would rather just say pysam.index(...), but since that global is
-# added dynamically, Eclipse flags this as a compilation problem. So
-# instead we connect directly to the pysam.SamtoolsDispatcher.
-def pysam_index(input_filename):
-    pysam.SamtoolsDispatcher("index", None).__call__(input_filename,
-                                                     catch_stdout=False)
+    def pysam_index(input_filename):
+        pysam.index(input_filename, catch_stdout=False)
 
-def pysam_sort(input_filename, output_prefix):
-    pysam.SamtoolsDispatcher("sort", None).__call__(input_filename,
-                                                    output_prefix,
-                                                    catch_stdout=False)
+    def pysam_sort(input_filename, output_prefix):
+        pysam.sort(input_filename, output_prefix, catch_stdout=False)
+    
+    def pysam_view(input_filename):
+        stdout_orig = sys.stdout
+        try:
+            sys.stdout = sys.__stdout__
+            return [x for x in pysam.view(input_filename)]
+        finally:
+            sys.stdout = stdout_orig
 
+class _Pysam9_10_11_12(object):
+    _SUPPORTED = re.match(r"^0\.(9|10|11|12)\.*", pysam.__version__)
+
+    def pysam_index(input_filename):
+        pysam.index(input_filename, catch_stdout=False)
+
+    def pysam_sort(input_filename, output_prefix):
+        pysam.sort(input_filename, '-o', output_prefix + '.bam', catch_stdout=False)
+    
+    def pysam_view(input_filename):
+        stdout_orig = sys.stdout
+        try:
+            sys.stdout = sys.__stdout__
+            view = pysam.view(input_filename)
+            try:
+                view = view.decode("utf-8")
+            except AttributeError:
+                pass # already a string
+            return view.strip().split('\n')
+        finally:
+            sys.stdout = stdout_orig
+
+for pysam_adpater in [_Pysam8, _Pysam9_10_11_12]:
+    if pysam_adpater._SUPPORTED:
+        PYSAM_ADAPTER=pysam_adpater
+        break
+else:
+    raise KatanaException('Unsupported version of pysam; please review config and install instructions.')
 
 class _BaseReadHandler(object):
     def begin(self):
@@ -135,9 +171,9 @@ class WriteReadHandler(_BaseReadHandler):
         self._bamfile = None
         output_root = os.path.splitext(self._output_bam_filename)[0]
         self._log("WRITE_BAM|sorting BAM")
-        pysam_sort(self._tmp_bam_filename, output_root)
+        readhandler.PYSAM_ADAPTER.pysam_sort(self._tmp_bam_filename, output_root)
         self._log("WRITE_BAM|indexing BAM")
-        pysam_index(self._output_bam_filename)
+        readhandler.PYSAM_ADAPTER.pysam_index(self._output_bam_filename)
         os.remove(self._tmp_bam_filename)
         self._log("WRITE_BAM|wrote [{}] alignments to [{}]",
                   self._read_count,

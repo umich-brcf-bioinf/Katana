@@ -4,6 +4,7 @@ from __future__ import print_function, absolute_import
 import sys
 import unittest
 
+from nose.exc import SkipTest
 import pysam
 
 from katana import util
@@ -31,7 +32,7 @@ def make_bam_file(filename, reads, header=None):
     for read in reads:
         outfile.write(read.aligned_segment)
     outfile.close()
-    readhandler.pysam_index(filename)
+    readhandler.PYSAM_ADAPTER.pysam_index(filename)
 
 def build_aligned_segment(query_name = "read_28833_29006_6945",
                query_sequence="AGCTTAGCTA",
@@ -168,6 +169,13 @@ class KatanaBaseTestCase(unittest.TestCase):
         sys.stderr = self.saved_stderr
         unittest.TestCase.tearDown(self)
 
+    @staticmethod
+    def check_sysout_safe():
+        try:
+            # nosetest and pysam fight over stdout; run nosetest -s to be safe
+            sys.stdout.fileno() #pylint disable=pointless-statement
+        except Exception: #pylint disable=broad=except
+            raise SkipTest("sysout unsafe to test: run nosetest with -s option")
 
 class PrimerStatsTestCase(KatanaBaseTestCase):
     def test_stat_keys(self):

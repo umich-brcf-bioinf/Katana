@@ -360,16 +360,6 @@ class ClipperFunctionalTestCase(KatanaBaseTestCase):
             new_file.flush()
         return filename
     
-    @staticmethod
-    def _bam_to_sam(bam_filename):
-        stdout_orig = sys.stdout
-        try:
-            sys.stdout = sys.__stdout__
-            view = pysam.SamtoolsDispatcher("view", None).__call__
-            return [x for x in view(bam_filename)]
-        finally:
-            sys.stdout = stdout_orig
-
     def test_main_usageError(self):
         self.assertRaises(SystemExit,
                           clipper.main,
@@ -385,6 +375,7 @@ class ClipperFunctionalTestCase(KatanaBaseTestCase):
                                  r".*No such file or directory: 'foo.txt'.*")
 
     def test_main(self):
+        self.check_sysout_safe()
         primer_file_content = \
 '''Customer TargetID|Chr|Sense Start|Antisense Start|Sense Sequence|Antisense Sequence
 primer1|1|101|200|AAGG|CCTT
@@ -432,7 +423,7 @@ primer2|2|501|600|CGCG|ATAT
                           input_bam_filename,
                           output_bam_filename])
 
-            actual = self._bam_to_sam(output_bam_filename)
+            actual = readhandler.PYSAM_ADAPTER.pysam_view(output_bam_filename)
 
         self.assertRegexpMatches(actual[0], "readA.*chr1.*105.*4S6M.*191")
         self.assertRegexpMatches(actual[1], "readA.*chr1.*191.*6M4S.*105")
