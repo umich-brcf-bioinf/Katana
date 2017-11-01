@@ -3,7 +3,7 @@ Installing Katana
 Katana has been tested with:
 
 * Python 2.7 and 3.4
-* pysam 0.8.3, 0.8.4
+* pysam 0.8 - 0.12
 * OSX and \*nix
 
 Prerequisites
@@ -17,12 +17,12 @@ Prerequisites
 
 Installing
 ----------
-The easiest way to install Jacquard is through PyPI. Get pip if it's
+The easiest way to install Katana is through PyPI. Get pip if it's
 not available in your system:
 
 ::
 
-   $ pip install jacquard
+   $ pip install katana
 
 You can install from source from github:
 
