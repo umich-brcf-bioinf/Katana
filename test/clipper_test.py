@@ -5,11 +5,11 @@ import os
 import resource
 import sys
 
-import pysam
 from testfixtures.tempdirectory import TempDirectory
 
 from katana import clipper, readhandler
 from katana.clipper import _build_read_transformations
+from katana import pysamadapter as pysamadapter
 from katana.util import ReadTransformation
 import katana.util as util
 from test.util_test import KatanaBaseTestCase, MockPrimerPair, MockRead, \
@@ -423,7 +423,7 @@ primer2|2|501|600|CGCG|ATAT
                           input_bam_filename,
                           output_bam_filename])
 
-            actual = readhandler.PYSAM_ADAPTER.pysam_view(output_bam_filename)
+            actual = pysamadapter.PYSAM_ADAPTER.view(output_bam_filename)
 
         self.assertRegexpMatches(actual[0], "readA.*chr1.*105.*4S6M.*191")
         self.assertRegexpMatches(actual[1], "readA.*chr1.*191.*6M4S.*105")

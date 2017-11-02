@@ -5,11 +5,10 @@ import sys
 import unittest
 
 from nose.exc import SkipTest
-import pysam
 
 from katana import util
 from katana.util import ReadTransformation
-from katana import readhandler
+from katana import pysamadapter as pysamadapter
 
 try:
     from StringIO import StringIO
@@ -28,11 +27,11 @@ def make_bam_file(filename, reads, header=None):
         header = { 'HD': {'VN': '1.0'},
                   'SQ': [{'LN': 1575, 'SN': 'chr1'},
                          {'LN': 1584, 'SN': 'chr2'}] }
-    outfile = pysam.AlignmentFile(filename, "wb", header=header)
+    outfile = pysamadapter.PYSAM_ADAPTER.alignment_file(filename, mode="wb", header=header)
     for read in reads:
         outfile.write(read.aligned_segment)
     outfile.close()
-    readhandler.PYSAM_ADAPTER.pysam_index(filename)
+    pysamadapter.PYSAM_ADAPTER.index(filename)
 
 def build_aligned_segment(query_name = "read_28833_29006_6945",
                query_sequence="AGCTTAGCTA",
@@ -46,7 +45,7 @@ def build_aligned_segment(query_name = "read_28833_29006_6945",
                template_length=167,
                query_qualities = None):
     #pylint: disable=no-member,too-many-arguments
-    a = pysam.AlignedSegment()
+    a = pysamadapter.PYSAM_ADAPTER.aligned_segment()
     a.query_name = query_name
     a.query_sequence = query_sequence
     a.flag = flag

@@ -5,63 +5,8 @@ from __future__ import print_function, absolute_import, division
 from collections import defaultdict
 import os
 import re
-import sys
 
-import pysam
-from katana.util import KatanaException
-
-PYSAM_ADAPTER = None
-class _Pysam8(object):
-    _SUPPORTED = re.match(r"^0\.8\.*", pysam.__version__)
-    
-    @staticmethod
-    def pysam_index(input_filename):
-        pysam.index(input_filename, catch_stdout=False)
-
-    @staticmethod
-    def pysam_sort(input_filename, output_prefix):
-        pysam.sort(input_filename, output_prefix, catch_stdout=False)
-    
-    @staticmethod
-    def pysam_view(input_filename):
-        stdout_orig = sys.stdout
-        try:
-            sys.stdout = sys.__stdout__
-            return [x for x in pysam.view(input_filename)]
-        finally:
-            sys.stdout = stdout_orig
-
-class _Pysam9_10_11_12(object):
-    _SUPPORTED = re.match(r"^0\.(9|10|11|12)\.*", pysam.__version__)
-
-    @staticmethod
-    def pysam_index(input_filename):
-        pysam.index(input_filename, catch_stdout=False)
-
-    @staticmethod
-    def pysam_sort(input_filename, output_prefix):
-        pysam.sort(input_filename, '-o', output_prefix + '.bam', catch_stdout=False)
-    
-    @staticmethod
-    def pysam_view(input_filename):
-        stdout_orig = sys.stdout
-        try:
-            sys.stdout = sys.__stdout__
-            view = pysam.view(input_filename)
-            try:
-                view = view.decode("utf-8")
-            except AttributeError:
-                pass # already a string
-            return view.strip().split('\n')
-        finally:
-            sys.stdout = stdout_orig
-
-for pysam_adpater in [_Pysam8, _Pysam9_10_11_12]:
-    if pysam_adpater._SUPPORTED:
-        PYSAM_ADAPTER=pysam_adpater()
-        break
-else:
-    raise KatanaException('Unsupported version of pysam; please review config and install instructions.')
+from katana import pysamadapter as pysamadpater
 
 class _BaseReadHandler(object):
     def begin(self):
@@ -89,7 +34,7 @@ class AddTagsReadHandler(_BaseReadHandler):
             read.set_tag("X4", filter_string, "Z")
 
     def _sanitize(self, value):
-         return re.sub(self._SANITIZED_REGEX, '_', value)
+        return re.sub(self._SANITIZED_REGEX, '_', value)
 
 class ExcludeNonMatchedReadHandler(_BaseReadHandler):
     '''Excludes reads from further processing'''
@@ -159,10 +104,10 @@ class WriteReadHandler(_BaseReadHandler):
         #pylint: disable=no-member
         input_bam = None
         try:
-            input_bam = pysam.AlignmentFile(self._input_bam_filename, "rb")
-            self._bamfile = pysam.AlignmentFile(self._tmp_bam_filename,
-                                                "wb",
-                                                template=input_bam)
+            input_bam = pysamadpater.PYSAM_ADAPTER.alignment_file(self._input_bam_filename)
+            self._bamfile = pysamadpater.PYSAM_ADAPTER.alignment_file(self._tmp_bam_filename,
+                                                                      mode="wb",
+                                                                      template=input_bam)
         finally:
             if input_bam:
                 input_bam.close()
@@ -176,9 +121,9 @@ class WriteReadHandler(_BaseReadHandler):
         self._bamfile = None
         output_root = os.path.splitext(self._output_bam_filename)[0]
         self._log("WRITE_BAM|sorting BAM")
-        PYSAM_ADAPTER.pysam_sort(self._tmp_bam_filename, output_root)
+        pysamadpater.PYSAM_ADAPTER.sort(self._tmp_bam_filename, output_root)
         self._log("WRITE_BAM|indexing BAM")
-        PYSAM_ADAPTER.pysam_index(self._output_bam_filename)
+        pysamadpater.PYSAM_ADAPTER.index(self._output_bam_filename)
         os.remove(self._tmp_bam_filename)
         self._log("WRITE_BAM|wrote [{}] alignments to [{}]",
                   self._read_count,

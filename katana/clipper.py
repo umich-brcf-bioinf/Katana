@@ -30,14 +30,12 @@ import sys
 import time
 import traceback
 
-import pysam
-
 import katana
 import katana.cigar as cigar
+import katana.pysamadapter as pysamadapter
 import katana.readhandler as readhandler
 from katana.util import KatanaException, PrimerStats, PrimerStatsDumper, \
     PrimerPair, Read, ReadTransformation
-
 
 __version__ = katana.__version__
 
@@ -211,8 +209,7 @@ def main(command_line_args=None):
         input_bamfile = None
 
         _log("Building transformations from BAM [{}]", args.input_bam)
-        #pylint: disable=no-member
-        input_bamfile = pysam.AlignmentFile(args.input_bam,"rb")
+        input_bamfile = pysamadapter.PYSAM_ADAPTER.alignment_file(args.input_bam)
         aligned_segment_iter = input_bamfile.fetch()
         read_iter = Read.iter(aligned_segment_iter, input_bamfile)
         read_transformations = _build_read_transformations(read_iter,
