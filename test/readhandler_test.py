@@ -3,10 +3,9 @@ from __future__ import print_function, absolute_import
 
 import os.path
 
-import pysam
 from testfixtures.tempdirectory import TempDirectory
 
-from katana import readhandler
+from katana import readhandler, pysamadapter
 from katana.readhandler import ExcludeNonMatchedReadHandler
 from test.util_test import KatanaBaseTestCase, MicroMock, MockRead, \
     MockPrimerPair, MockLog, build_read, make_bam_file
@@ -74,6 +73,24 @@ class AddTagsReadHandlerTestCase(KatanaBaseTestCase):
         handler.handle(read, transformation, mate_transformation)
 
         self.assertEquals("X4:Z:" + "filter1,filter2", read._tags["X4"])
+
+    def test_handle_sanitizes_tags(self):
+        read = MockRead(reference_start=100,
+                        reference_end=110,
+                        cigarstring="10M")
+        primer_pair_target = "123!@#$%target \t\t A \n thing-_."
+        primer_pair = MockPrimerPair(target_id=primer_pair_target)
+
+        transformation = MicroMock(primer_pair=primer_pair,
+                                   filters=())
+        mate_transformation = None
+        handler = readhandler.AddTagsReadHandler()
+
+        handler.handle(read, transformation, mate_transformation)
+
+        self.assertEquals("X0:Z:123_target_A_thing-_.",
+                          read._tags["X0"])
+
 
 class ExcludeReadHandlerTestCase(KatanaBaseTestCase):
     def test_handle_noExceptionIfNoFilters(self):
@@ -265,7 +282,7 @@ class WriteReadHandlerTestCase(KatanaBaseTestCase):
 
             actual_files = sorted(os.listdir(output_dir.path))
             self.assertEquals(["output.bam", "output.bam.bai"], actual_files)
-            actual_bam = pysam.AlignmentFile(output_bam_filename, "rb")
+            actual_bam = pysamadapter.PYSAM_ADAPTER.alignment_file(output_bam_filename)
             actual_reads = [read for read in actual_bam.fetch()]
             actual_bam.close()
 

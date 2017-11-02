@@ -1,4 +1,4 @@
-#cgates: 2/4/2016
+#cgates: 11/1/2017
 
 language: python
 python:
@@ -10,8 +10,12 @@ env:
     matrix:
         - PYSAM_VERSION=0.8.3
         - PYSAM_VERSION=0.8.4
-
+        - PYSAM_VERSION=0.9.0
+        - PYSAM_VERSION=0.10.0
+        - PYSAM_VERSION=0.11.0
+        - PYSAM_VERSION=0.12.0
 install:
+    - pip install `grep cython requirements.txt`
     - pip install -q pysam==$PYSAM_VERSION
     - pip install -q -r requirements.txt
 
@@ -20,8 +24,8 @@ before_script:
     - pip install coveralls
 
 script:
-    - nosetests --with-coverage --verbose --cover-package=katana
-    - nosetests examples
+    - nosetests -s --with-coverage --verbose --cover-package=katana
+    - nosetests -s examples
 
 after_success:
     - coveralls
