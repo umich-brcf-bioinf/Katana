@@ -1,7 +1,7 @@
 Changelog
 =========
 
-0.1.2 (X/X/2016)
+0.1.2 (11/2/2017)
 -----------------
  - Adds/correctly updates MC tag
  - Fixed erroneous mate info when mate is filtered out
@@ -14,7 +14,7 @@ Changelog
 
 
 0.1.1 (2/9/2016)
------------------
+----------------
  - Fixed problems in BAM output:
    - Corrected next reference in paired reads
    - Excludes reads where CIGAR is entirely clipped
@@ -28,5 +28,5 @@ Changelog
  - Added support for pysam 0.8.3
 
 0.1 (1/28/2016)
---------------
+---------------
  - Initial Release
