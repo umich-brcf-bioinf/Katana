@@ -4,22 +4,9 @@ from __future__ import print_function, absolute_import, division
 
 from collections import defaultdict
 import os
+import re
 
-import pysam
-
-
-# I would rather just say pysam.index(...), but since that global is
-# added dynamically, Eclipse flags this as a compilation problem. So
-# instead we connect directly to the pysam.SamtoolsDispatcher.
-def pysam_index(input_filename):
-    pysam.SamtoolsDispatcher("index", None).__call__(input_filename,
-                                                     catch_stdout=False)
-
-def pysam_sort(input_filename, output_prefix):
-    pysam.SamtoolsDispatcher("sort", None).__call__(input_filename,
-                                                    output_prefix,
-                                                    catch_stdout=False)
-
+from katana import pysamadapter as pysamadpater
 
 class _BaseReadHandler(object):
     def begin(self):
@@ -29,12 +16,16 @@ class _BaseReadHandler(object):
     def end(self):
         pass
 
-
 class AddTagsReadHandler(_BaseReadHandler):
     '''Adds original read values and other explanatory tags.'''
+    
+    _SANITIZED_REGEX = re.compile('[^A-Za-z0-9-_.]+')
+
+    #pylint: disable=unused-parameter
     def handle(self, read, read_transformation, mate_transformation):
         primer_pair = read_transformation.primer_pair
-        read.set_tag("X0", primer_pair.target_id, "Z")
+        sanitized_target_id = self._sanitize(primer_pair.target_id)
+        read.set_tag("X0", sanitized_target_id, "Z")
         read.set_tag("X1", read.cigarstring, "Z")
         read.set_tag("X2", read.reference_start, "i")
         read.set_tag("X3", read.reference_end, "i")
@@ -42,6 +33,8 @@ class AddTagsReadHandler(_BaseReadHandler):
             filter_string = ",".join(read_transformation.filters)
             read.set_tag("X4", filter_string, "Z")
 
+    def _sanitize(self, value):
+        return re.sub(self._SANITIZED_REGEX, '_', value)
 
 class ExcludeNonMatchedReadHandler(_BaseReadHandler):
     '''Excludes reads from further processing'''
@@ -83,9 +76,12 @@ class TransformReadHandler(_BaseReadHandler):
     def handle(self, read, read_transformation, mate_transformation):
         read.reference_start = read_transformation.reference_start
         read.cigarstring = read_transformation.cigar
-        if read.is_paired and not mate_transformation.is_unmapped:
-            read.next_reference_start = mate_transformation.reference_start
-
+        if read.is_paired:
+            if mate_transformation.is_unmapped:
+                read.mate_cigar = None
+            else:
+                read.next_reference_start = mate_transformation.reference_start
+                read.mate_cigar = mate_transformation.cigar
 
 #TODO: Add PG and CO header lines for tags
 class WriteReadHandler(_BaseReadHandler):
@@ -108,10 +104,10 @@ class WriteReadHandler(_BaseReadHandler):
         #pylint: disable=no-member
         input_bam = None
         try:
-            input_bam = pysam.AlignmentFile(self._input_bam_filename, "rb")
-            self._bamfile = pysam.AlignmentFile(self._tmp_bam_filename,
-                                                "wb",
-                                                template=input_bam)
+            input_bam = pysamadpater.PYSAM_ADAPTER.alignment_file(self._input_bam_filename)
+            self._bamfile = pysamadpater.PYSAM_ADAPTER.alignment_file(self._tmp_bam_filename,
+                                                                      mode="wb",
+                                                                      template=input_bam)
         finally:
             if input_bam:
                 input_bam.close()
@@ -125,9 +121,9 @@ class WriteReadHandler(_BaseReadHandler):
         self._bamfile = None
         output_root = os.path.splitext(self._output_bam_filename)[0]
         self._log("WRITE_BAM|sorting BAM")
-        pysam_sort(self._tmp_bam_filename, output_root)
+        pysamadpater.PYSAM_ADAPTER.sort(self._tmp_bam_filename, output_root)
         self._log("WRITE_BAM|indexing BAM")
-        pysam_index(self._output_bam_filename)
+        pysamadpater.PYSAM_ADAPTER.index(self._output_bam_filename)
         os.remove(self._tmp_bam_filename)
         self._log("WRITE_BAM|wrote [{}] alignments to [{}]",
                   self._read_count,

@@ -3,10 +3,9 @@ from __future__ import print_function, absolute_import
 
 import os.path
 
-import pysam
 from testfixtures.tempdirectory import TempDirectory
 
-from katana import readhandler
+from katana import readhandler, pysamadapter
 from katana.readhandler import ExcludeNonMatchedReadHandler
 from test.util_test import KatanaBaseTestCase, MicroMock, MockRead, \
     MockPrimerPair, MockLog, build_read, make_bam_file
@@ -74,6 +73,24 @@ class AddTagsReadHandlerTestCase(KatanaBaseTestCase):
         handler.handle(read, transformation, mate_transformation)
 
         self.assertEquals("X4:Z:" + "filter1,filter2", read._tags["X4"])
+
+    def test_handle_sanitizes_tags(self):
+        read = MockRead(reference_start=100,
+                        reference_end=110,
+                        cigarstring="10M")
+        primer_pair_target = "123!@#$%target \t\t A \n thing-_."
+        primer_pair = MockPrimerPair(target_id=primer_pair_target)
+
+        transformation = MicroMock(primer_pair=primer_pair,
+                                   filters=())
+        mate_transformation = None
+        handler = readhandler.AddTagsReadHandler()
+
+        handler.handle(read, transformation, mate_transformation)
+
+        self.assertEquals("X0:Z:123_target_A_thing-_.",
+                          read._tags["X0"])
+
 
 class ExcludeReadHandlerTestCase(KatanaBaseTestCase):
     def test_handle_noExceptionIfNoFilters(self):
@@ -168,22 +185,25 @@ class TransformReadHandlerTestCase(KatanaBaseTestCase):
         read = MockRead(reference_start=100,
                         cigarstring="10M",
                         next_reference_start=150,
-                        is_paired = True)
+                        is_paired = True,
+                        mate_cigar='10M')
         new_reference_start = 102
         new_cigar_string = "2S8M"
+        new_mate_cigar_string = '8M2S'
         new_next_ref_start = 200
         transformation = MicroMock(primer_pair=None,
                                    reference_start=new_reference_start,
                                    cigar=new_cigar_string)
         mate_transformation = MicroMock(primer_pair=None,
                                         reference_start=new_next_ref_start,
-                                        ciagr="",
+                                        cigar=new_mate_cigar_string,
                                         is_unmapped=False)
         handler = readhandler.TransformReadHandler()
         handler.handle(read, transformation, mate_transformation)
         self.assertEquals(new_reference_start, read.reference_start)
         self.assertEquals(new_cigar_string, read.cigarstring)
         self.assertEquals(new_next_ref_start, read.next_reference_start)
+        self.assertEquals(new_mate_cigar_string, read.mate_cigar)
 
     def test_handle_ignoresMateIfUnpaired(self):
         #pylint: disable=no-member
@@ -220,6 +240,21 @@ class TransformReadHandlerTestCase(KatanaBaseTestCase):
         self.assertEquals(original_next_reference_start,
                           read.next_reference_start)
 
+    def test_handle_RemovesMateCigarTagIfMateUnmapped(self):
+        #pylint: disable=no-member
+        read = MockRead(reference_start=111,
+                        cigarstring="10M",
+                        next_reference_start=222,
+                        is_paired = True,
+                        mate_cigar='10M')
+        transformation = MicroMock(reference_start=111,
+                                   cigar="10M")
+        mate_transformation = MicroMock(is_unmapped=True,
+                                        reference_start=333)
+        handler = readhandler.TransformReadHandler()
+        handler.handle(read, transformation, mate_transformation)
+        self.assertEquals(None, read.mate_cigar)
+
 
 class WriteReadHandlerTestCase(KatanaBaseTestCase):
 
@@ -247,7 +282,7 @@ class WriteReadHandlerTestCase(KatanaBaseTestCase):
 
             actual_files = sorted(os.listdir(output_dir.path))
             self.assertEquals(["output.bam", "output.bam.bai"], actual_files)
-            actual_bam = pysam.AlignmentFile(output_bam_filename, "rb")
+            actual_bam = pysamadapter.PYSAM_ADAPTER.alignment_file(output_bam_filename)
             actual_reads = [read for read in actual_bam.fetch()]
             actual_bam.close()
 
